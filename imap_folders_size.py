@@ -10,6 +10,7 @@
 import sys, os, imaplib, imapclient, getpass, re, pdb
 
 imap_folder_re = re.compile(r"^\([^)]*\) (.*)$")
+imap_quota_re = re.compile(r"^\"[^\"]*\" \(STORAGE (\d+) (\d+)\)$")
 
 imap_server = "imap.free.fr"
 #imap_server = "imap.gmail.com"
@@ -69,8 +70,27 @@ if __name__ == '__main__':
     try:
         M.login(user, passwd)
     except imaplib.IMAP4.error as e:
-        print('Error: %s' % (e))
+        print('IMAP Login error: %s' % (e))
         sys.exit(1)
+
+    # List server capabilities
+    try:
+        capabilities_rsp = M.capability()
+        if (capabilities_rsp[0] != 'OK'):
+            raise Exception('Unable to retrieve IMAP server capabilities')
+        if " QUOTA " in str(capabilities_rsp[1][0]):
+            quota_rsp = M.getquotaroot("INBOX")
+            if (quota_rsp[0] != 'OK'):
+                raise Exception('Unable to retrieve IMAP server quotas')
+            quota_infos = imap_quota_re.match(str(quota_rsp[1][1][0], 'utf-8'))
+            if quota_infos == None:
+                raise Exception('Unable to parse IMAP server quotas')
+            quota_used, quota_total = int(quota_infos.group(1)), int(quota_infos.group(2))
+    except imaplib.IMAP4.error as e:
+        print('IMAP capabilities error: %s' % (e))
+        sys.exit(1)
+    except Exception as e:
+        print('IMAP capabilities error: %s' % (e))
 
     # The list of all folders
     result, folders = M.list()
@@ -90,6 +110,8 @@ if __name__ == '__main__':
         size_total += fsize
 
     print_folder_size("Sum", nmessages_total, size_total)
+    if quota_used != None and quota_total != None:
+        print("\nQuotas Used: %d Total: %d Usage: %.2f%%" % (quota_used, quota_total, (100*quota_used)/quota_total))
 
     # Close the connection
     M.logout()
