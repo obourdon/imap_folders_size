@@ -30,7 +30,7 @@ def folder_size(M, folder_entry):
         return 0, 0
     folder_items = imap_folder_match.group(1).split()
     # Select the desired folder
-    mbx = '"' + ' '.join(map(lambda x: x.replace('"', ''), folder_items[1:])) + '"'
+    mbx = '"' + ' '.join(map(lambda x: x.strip('"'), folder_items[1:])) + '"'
     result, nb = M.select(mbx, readonly=1)
     if result != 'OK':
         print('%s IMAP folder select returned %s' % (mbx, result))
