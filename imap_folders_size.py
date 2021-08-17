@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# This is a sample Python script.
 
 # Press ⌃R to execute it or replace it with your code.
 # Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
@@ -48,8 +47,7 @@ def folder_size(M, folder_entry):
             return -1, 0
         for msg in msizes:
             fs += int(str(msg.split()[-1], 'utf-8').replace(')', ''))
-    print_folder_size(imapclient.imap_utf7.decode(mbx.encode()).strip('"'), int(nb[0]), fs)
-    return int(nb[0]), fs
+    return {'name': imapclient.imap_utf7.decode(mbx.encode()).strip('"'), 'messages': int(nb[0]), 'size': fs}
 
 
 def env_or_tty_passwd():
@@ -98,17 +96,20 @@ if __name__ == '__main__':
         print('IMAP folder list returned %s' % (result))
         sys.exit(1)
 
-    print_folder_size("Folder", "# Msg", "Size")
-
     nmessages_total = 0
     size_total = 0
 
+    imap_folders = []
     #pdb.set_trace()
     for folder in folders:
-        fcount, fsize = folder_size(M, folder)
-        nmessages_total += fcount
-        size_total += fsize
+        folder_infos = folder_size(M, folder)
+        imap_folders.append([folder_infos['name'], folder_infos['messages'], folder_infos['size']])
+        nmessages_total += imap_folders[-1][1]
+        size_total += imap_folders[-1][2]
 
+    print_folder_size("Folder", "# Msg", "Size")
+    for f in imap_folders:
+        print_folder_size(f[0], f[1], f[2])
     print_folder_size("Sum", nmessages_total, size_total)
     if quota_used != None and quota_total != None:
         print("\nQuotas Used: %d Total: %d Usage: %.2f%%" % (quota_used, quota_total, (100*quota_used)/quota_total))
