@@ -6,18 +6,13 @@
 
 # LOGNAME=my-email
 # LOGPASSWD=xxxxx
-import sys, os, imaplib, imapclient, getpass, re, pdb
+import sys, os, imaplib, imapclient, getpass, re, tabulate, pdb
 
 imap_folder_re = re.compile(r"^\([^)]*\) (.*)$")
 imap_quota_re = re.compile(r"^\"[^\"]*\" \(STORAGE (\d+) (\d+)\)$")
 
 imap_server = "imap.free.fr"
 #imap_server = "imap.gmail.com"
-
-
-def print_folder_size(folder, nb, size):
-    fmt = "%16s %-50s %5s"
-    print(fmt % (size, folder, nb))
 
 
 def folder_size(M, folder_entry):
@@ -107,10 +102,8 @@ if __name__ == '__main__':
         nmessages_total += imap_folders[-1][1]
         size_total += imap_folders[-1][2]
 
-    print_folder_size("Folder", "# Msg", "Size")
-    for f in imap_folders:
-        print_folder_size(f[0], f[1], f[2])
-    print_folder_size("Sum", nmessages_total, size_total)
+    imap_folders.append(["Sum", nmessages_total, size_total])
+    print(tabulate.tabulate(imap_folders, headers=["Folder", "# Msg", "Size"]))
     if quota_used != None and quota_total != None:
         print("\nQuotas Used: %d Total: %d Usage: %.2f%%" % (quota_used, quota_total, (100*quota_used)/quota_total))
 
