@@ -6,13 +6,30 @@
 
 # LOGNAME=my-email
 # LOGPASSWD=xxxxx
-import sys, os, imaplib, imapclient, getpass, re, tabulate, pdb
+
+import getpass, imapclient, imaplib, os, pdb, re, sys, tabulate
+from datetime import datetime
 
 imap_folder_re = re.compile(r"^\([^)]*\) (.*)$")
 imap_quota_re = re.compile(r"^\"[^\"]*\" \(STORAGE (\d+) (\d+)\)$")
 
 imap_server = "imap.free.fr"
 #imap_server = "imap.gmail.com"
+
+
+def human_readable_size(size, suffix='B', decimal_places=1, units_offset=0):
+    offset = ' '*units_offset
+    for unit in ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y']:
+        if size < 1024.0 or unit == 'Y':
+            break
+        size /= 1024.0
+    return f"{size:.{decimal_places}f}{offset}{unit}{suffix}"
+
+
+def folder_real_name(folder, decoded=True):
+    if decoded:
+        return imapclient.imap_utf7.decode(folder.encode())
+    return folder
 
 
 def folder_size(M, folder_entry):
@@ -36,13 +53,18 @@ def folder_size(M, folder_entry):
     if m:
         m.sort()
         msgset = "%d:%d" % (m[0], m[-1])
-        result, msizes = M.fetch(msgset, "(RFC822.SIZE)")
+        result, msizes = M.fetch(msgset, "(INTERNALDATE RFC822.SIZE)")
         if result != 'OK':
             print('IMAP messages sizes returned %s' % (result))
             return -1, 0
-        for msg in msizes:
-            fs += int(str(msg.split()[-1], 'utf-8').replace(')', ''))
-    return {'name': imapclient.imap_utf7.decode(mbx.encode()).strip('"'), 'messages': int(nb[0]), 'size': fs}
+        for msg in map(lambda x: re.sub(r'[1-9]* \((.*)\)', r'\1', str(x.replace(b'"',b'').replace(b' RFC822.SIZE ', b',SIZE,').replace(b'INTERNALDATE ', b'DATE,'), 'utf-8')).split(','), msizes):
+            msg_size = int(msg[-1])
+            try:
+              msg_date = datetime.strptime(msg[1], '%d-%b-%Y %H:%M:%S %z')
+            except ValueError as e:
+                print('IMAP message date decoding error: %s %s' % (msg[1], e))
+            fs += msg_size
+    return {'name': folder_real_name(mbx.strip('"')), 'messages': int(nb[0]), 'size': fs}
 
 
 def env_or_tty_passwd():
