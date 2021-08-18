@@ -32,7 +32,19 @@ def folder_real_name(folder, decoded=True):
     return folder
 
 
+def min_max_append(v, name="size"):
+    cmd="message_" + name + "s.append(v)"
+    eval(cmd)
+    for f in ["min", "max"]:
+        cmd="min_max.get(\"" + name + "_" + f + "\")"
+        lcur = eval(cmd)
+        if f == "min" and (lcur == None or v < lcur):
+            min_max[name + "_" + f] = v
+        elif f == "max" and (lcur == None or v > lcur):
+            min_max[name + "_" + f] = v
+
 def folder_size(M, folder_entry):
+    global message_sizes, message_dates, min_max
     fs = 0
     nb = '0'
     imap_folder_match = imap_folder_re.match(str(folder_entry, 'utf-8'))
@@ -59,8 +71,10 @@ def folder_size(M, folder_entry):
             return -1, 0
         for msg in map(lambda x: re.sub(r'[1-9]* \((.*)\)', r'\1', str(x.replace(b'"',b'').replace(b' RFC822.SIZE ', b',SIZE,').replace(b'INTERNALDATE ', b'DATE,'), 'utf-8')).split(','), msizes):
             msg_size = int(msg[-1])
+            min_max_append(msg_size, name="size")
             try:
               msg_date = datetime.strptime(msg[1], '%d-%b-%Y %H:%M:%S %z')
+              min_max_append(msg_date, name="date")
             except ValueError as e:
                 print('IMAP message date decoding error: %s %s' % (msg[1], e))
             fs += msg_size
@@ -117,6 +131,9 @@ if __name__ == '__main__':
     size_total = 0
 
     imap_folders = []
+    min_max = {'size_min': None, 'size_max': None, 'date_min': None, 'date_max': None}
+    message_sizes = []
+    message_dates = []
     #pdb.set_trace()
     for folder in folders:
         folder_infos = folder_size(M, folder)
@@ -136,7 +153,8 @@ if __name__ == '__main__':
     print(tabulate.tabulate(imap_folders, headers=hfields, floatfmt=".2f"))
     if quota_used != None and quota_total != None:
         print("\nQuotas Used: %d Total: %d Usage: %.2f%%" % (quota_used, quota_total, (100*quota_used)/quota_total))
-
+    print("\nMessage sizes: [{} - {}]".format(min_max.get("size_min", "?"), min_max.get("size_max", "?")))
+    print("\nMessage dates: [{} - {}]".format(min_max.get("date_min", "?"), min_max.get("date_max", "?")))
     # Close the connection
     M.logout()
 
