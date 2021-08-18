@@ -120,12 +120,20 @@ if __name__ == '__main__':
     #pdb.set_trace()
     for folder in folders:
         folder_infos = folder_size(M, folder)
-        imap_folders.append([folder_infos['name'], folder_infos['messages'], folder_infos['size']])
+        folder_stats = [folder_infos['name'], folder_infos['messages'], folder_infos['size']]
+        if quota_used != None and quota_used != 0:
+            folder_stats.append((100.0 * folder_infos['size']) / (1024 * quota_used))
+        imap_folders.append(folder_stats)
         nmessages_total += imap_folders[-1][1]
         size_total += imap_folders[-1][2]
 
-    imap_folders.append(["Sum", nmessages_total, size_total])
-    print(tabulate.tabulate(imap_folders, headers=["Folder", "# Msg", "Size"]))
+    summary = ["Sum", nmessages_total, size_total]
+    hfields = ["Folder", "# Msg", "Size"]
+    if quota_used != None and quota_used != 0:
+        hfields.append("%")
+        summary.append(100)
+    imap_folders.append(summary)
+    print(tabulate.tabulate(imap_folders, headers=hfields, floatfmt=".2f"))
     if quota_used != None and quota_total != None:
         print("\nQuotas Used: %d Total: %d Usage: %.2f%%" % (quota_used, quota_total, (100*quota_used)/quota_total))
 
