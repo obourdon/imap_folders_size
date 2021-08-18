@@ -1,0 +1,5 @@
+- add command line arguments for properly providing informations without any hardcoding/environment variable.
+
+- provide several output sorting methods
+
+- histograms message sizes + message dates
