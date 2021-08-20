@@ -32,16 +32,16 @@ def folder_real_name(folder, decoded=True):
     return folder
 
 
-def min_max_append(v, name="size"):
+def min_max_append(v, name="size", extras={}):
     cmd="message_" + name + "s.append(v)"
     eval(cmd)
     for f in ["min", "max"]:
         cmd="min_max.get(\"" + name + "_" + f + "\")"
         lcur = eval(cmd)
-        if f == "min" and (lcur == None or v < lcur):
-            min_max[name + "_" + f] = v
-        elif f == "max" and (lcur == None or v > lcur):
-            min_max[name + "_" + f] = v
+        if f == "min" and (lcur == None or v < lcur['VALUE']):
+            min_max[name + "_" + f] = {**extras, **{'VALUE': v}}
+        elif f == "max" and (lcur == None or v > lcur['VALUE']):
+            min_max[name + "_" + f] = {**extras, **{'VALUE': v}}
 
 def folder_size(M, folder_entry):
     global message_sizes, message_dates, min_max
@@ -69,11 +69,11 @@ def folder_size(M, folder_entry):
         if result != 'OK':
             print('IMAP messages sizes returned %s' % (result))
             return -1, 0
-        for msg in map(lambda x: re.sub(r'[1-9]* \((.*)\)', r'\1', str(x.replace(b'"',b'').replace(b' RFC822.SIZE ', b',SIZE,').replace(b'INTERNALDATE ', b'DATE,'), 'utf-8')).split(','), msizes):
-            msg_size = int(msg[-1])
-            min_max_append(msg_size, name="size")
+        for msg in map(lambda x: dict(list(zip(*[iter(re.sub(r'([1-9][0-9]*) \((.*)\)', r'ID,\1,\2', str(x.replace(b'"',b'').replace(b' RFC822.SIZE ', b',SIZE,').replace(b'INTERNALDATE ', b'DATE,'), 'utf-8')).split(','))] * 2))), msizes):
+            msg_size = int(msg['SIZE'])
+            min_max_append(msg_size, name="size", extras={'ID': int(msg['ID']), 'FOLDER': folder_real_name(mbx.strip('"'))})
             try:
-              msg_date = datetime.strptime(msg[1], '%d-%b-%Y %H:%M:%S %z')
+              msg_date = datetime.strptime(msg['DATE'], '%d-%b-%Y %H:%M:%S %z')
               min_max_append(msg_date, name="date")
             except ValueError as e:
                 print('IMAP message date decoding error: %s %s' % (msg[1], e))
@@ -153,8 +153,8 @@ if __name__ == '__main__':
     print(tabulate.tabulate(imap_folders, headers=hfields, floatfmt=".2f"))
     if quota_used != None and quota_total != None:
         print("\nQuotas Used: %d Total: %d Usage: %.2f%%" % (quota_used, quota_total, (100*quota_used)/quota_total))
-    print("\nMessage sizes: [{} - {}]".format(min_max.get("size_min", "?"), min_max.get("size_max", "?")))
-    print("\nMessage dates: [{} - {}]".format(min_max.get("date_min", "?"), min_max.get("date_max", "?")))
+    print("\nMessage sizes: [{} - {}]".format(min_max.get("size_min", "?").get("VALUE", "?"), min_max.get("size_max", "?").get("VALUE", "?")))
+    print("\nMessage dates: [{} - {}]".format(min_max.get("date_min", "?").get("VALUE", "?"), min_max.get("date_max", "?").get("VALUE", "?")))
     # Close the connection
     M.logout()
 
