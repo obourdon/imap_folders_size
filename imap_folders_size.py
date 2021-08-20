@@ -9,6 +9,7 @@
 
 import getpass, imapclient, imaplib, os, pdb, re, sys, tabulate
 from datetime import datetime
+import numpy as np
 
 imap_folder_re = re.compile(r"^\([^)]*\) (.*)$")
 imap_quota_re = re.compile(r"^\"[^\"]*\" \(STORAGE (\d+) (\d+)\)$")
@@ -74,10 +75,10 @@ def folder_size(M, folder_entry):
             msg_date = None
             try:
               msg_date = datetime.strptime(msg['DATE'], '%d-%b-%Y %H:%M:%S %z')
-              min_max_append(msg_date, name="date", extras={'ID': int(msg['ID']), 'FOLDER': folder_real_name(mbx.strip('"')), 'SIZE': msg_size})
+              min_max_append(msg_date, name="date", extras={'ID': int(msg['ID']), 'FOLDER': mbx, 'SIZE': msg_size})
             except ValueError as e:
                 print('IMAP message date decoding error: %s %s' % (msg[1], e))
-            min_max_append(msg_size, name="size", extras={'ID': int(msg['ID']), 'FOLDER': folder_real_name(mbx.strip('"')), 'DATE': msg_date})
+            min_max_append(msg_size, name="size", extras={'ID': int(msg['ID']), 'FOLDER': mbx, 'DATE': msg_date})
             fs += msg_size
     return {'name': folder_real_name(mbx.strip('"')), 'messages': int(nb[0]), 'size': fs}
 
@@ -153,9 +154,18 @@ if __name__ == '__main__':
     imap_folders.append(summary)
     print(tabulate.tabulate(imap_folders, headers=hfields, floatfmt=".2f"))
     if quota_used != None and quota_total != None:
-        print("\nQuotas Used: %d Total: %d Usage: %.2f%%" % (quota_used, quota_total, (100*quota_used)/quota_total))
+        print("\nQuotas Used: %s Total: %s Usage: %.2f%%" % (human_readable_size(quota_used*1024), human_readable_size(quota_total*1024), (100*quota_used)/quota_total))
     print("\nMessage sizes: [{} - {}]".format(min_max.get("size_min", "?").get("VALUE", "?"), min_max.get("size_max", "?").get("VALUE", "?")))
     print("\nMessage dates: [{} - {}]".format(min_max.get("date_min", "?").get("VALUE", "?"), min_max.get("date_max", "?").get("VALUE", "?")))
+    data = np.array(list(map(lambda x: x.get("VALUE"), message_sizes)))
+    over95percent = int(data.mean() + 2 * data.std())
+    print("\nMessage over {} (upper 95% quartile):".format(human_readable_size(over95percent)))
+    to_save = 0
+    big_messages = sorted(list(filter(lambda x: x.get("VALUE", 0) > over95percent, message_sizes)), key=lambda x: x.get("VALUE"))
+    for msg in big_messages:
+        print("Message #{} in {} size {} date {}".format(msg.get("ID"), folder_real_name(msg.get("FOLDER").strip('"')), human_readable_size(msg.get("VALUE")), msg.get("DATE")))
+        to_save += msg.get("VALUE")
+    print("You can save %s (%.2f%%) by cleaning up %d messages\n" % (human_readable_size(to_save), ((100*to_save)/(1024*quota_used)), len(big_messages)))
     # Close the connection
     M.logout()
 
