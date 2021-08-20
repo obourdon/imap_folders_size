@@ -33,7 +33,7 @@ def folder_real_name(folder, decoded=True):
 
 
 def min_max_append(v, name="size", extras={}):
-    cmd="message_" + name + "s.append(v)"
+    cmd="message_" + name + "s.append({**extras, **{'VALUE': v}})"
     eval(cmd)
     for f in ["min", "max"]:
         cmd="min_max.get(\"" + name + "_" + f + "\")"
@@ -71,12 +71,13 @@ def folder_size(M, folder_entry):
             return -1, 0
         for msg in map(lambda x: dict(list(zip(*[iter(re.sub(r'([1-9][0-9]*) \((.*)\)', r'ID,\1,\2', str(x.replace(b'"',b'').replace(b' RFC822.SIZE ', b',SIZE,').replace(b'INTERNALDATE ', b'DATE,'), 'utf-8')).split(','))] * 2))), msizes):
             msg_size = int(msg['SIZE'])
-            min_max_append(msg_size, name="size", extras={'ID': int(msg['ID']), 'FOLDER': folder_real_name(mbx.strip('"'))})
+            msg_date = None
             try:
               msg_date = datetime.strptime(msg['DATE'], '%d-%b-%Y %H:%M:%S %z')
-              min_max_append(msg_date, name="date")
+              min_max_append(msg_date, name="date", extras={'ID': int(msg['ID']), 'FOLDER': folder_real_name(mbx.strip('"')), 'SIZE': msg_size})
             except ValueError as e:
                 print('IMAP message date decoding error: %s %s' % (msg[1], e))
+            min_max_append(msg_size, name="size", extras={'ID': int(msg['ID']), 'FOLDER': folder_real_name(mbx.strip('"')), 'DATE': msg_date})
             fs += msg_size
     return {'name': folder_real_name(mbx.strip('"')), 'messages': int(nb[0]), 'size': fs}
 
