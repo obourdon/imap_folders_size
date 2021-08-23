@@ -7,7 +7,7 @@
 # LOGNAME=my-email
 # LOGPASSWD=xxxxx
 
-import getpass, imapclient, imaplib, os, pdb, re, sys, tabulate
+import email, getpass, imapclient, imaplib, os, pdb, re, sys, tabulate
 from datetime import datetime
 import numpy as np
 
@@ -36,6 +36,34 @@ def folder_real_name(folder, decoded=True):
 def list_append(v, name="size", extras={}):
     cmd="message_" + name + "s.append({**extras, **{'VALUE': v}})"
     eval(cmd)
+
+
+def message_subject_from_to(msg):
+    msg_id = msg.get('ID')
+    mbx = msg.get('FOLDER')
+    if mbx == None or msg_id == None:
+        print('Unable to retrieve folder for message %s in %s' % (msg.get('ID'), msg.get('FOLDER')))
+        return "(None)", "(None)", "(None)"
+    result, nb = M.select(mbx, readonly=1)
+    if result != 'OK':
+        print('%s IMAP folder select returned %s' % (mbx, result))
+        return "(None)", "(None)", "(None)"
+    result, msg_data = M.fetch(str(msg_id), "(RFC822)")
+    if result != 'OK':
+        print('%s IMAP folder fetch %s returned %s' % (mbx, msg_id, result))
+        return "(None)", "(None)", "(None)"
+    for response_part in msg_data:
+        if isinstance(response_part, tuple):
+            try:
+                msg = email.message_from_string(response_part[1].decode('utf-8'))
+                msg_from = str(email.header.make_header(email.header.decode_header(msg['From'])))
+                msg_to = str(email.header.make_header(email.header.decode_header(msg['To'])))
+                msg_subject = str(email.header.make_header(email.header.decode_header(msg['Subject'])))
+                return msg_from, msg_to, msg_subject
+            except Exception as e:
+                print('%s IMAP folder message %s can not decode: %s' % (mbx, msg_id, e))
+    return "(None)", "(None)", "(None)"
+
 
 def folder_size(M, folder_entry):
     global message_sizes, message_dates, min_max
@@ -153,12 +181,15 @@ if __name__ == '__main__':
     print("\nMessage sizes: [{} - {}]".format(sdata.min(), sdata.max()))
     print("\nMessage dates: [{} - {}]".format(ddata.min(), ddata.max()))
     over95percent = int(sdata.mean() + 2 * sdata.std())
-    print("\nMessage over {} (upper 95% quartile):".format(human_readable_size(over95percent)))
+    print("\nMessages over {} (upper 95% quartile):\n".format(human_readable_size(over95percent)))
     to_save = 0
     big_messages = sorted(list(filter(lambda x: x.get("VALUE", 0) > over95percent, message_sizes)), key=lambda x: x.get("VALUE"))
+    biggest = []
     for msg in big_messages:
-        print("Message #{} in {} size {} date {}".format(msg.get("ID"), folder_real_name(msg.get("FOLDER").strip('"')), human_readable_size(msg.get("VALUE")), msg.get("DATE")))
+        msg_from, msg_to, msg_subject = message_subject_from_to(msg)
+        biggest.append([msg.get("ID"), human_readable_size(msg.get("VALUE")), msg.get("DATE"), folder_real_name(msg.get("FOLDER").strip('"')), msg_from, msg_subject])
         to_save += msg.get("VALUE")
+    print(tabulate.tabulate(biggest, headers=["ID", "Size", "Date", "Folder", "From", "Subject"]))
     print("You can save %s (%.2f%%) by cleaning up the %d biggest messages\n" % (human_readable_size(to_save), ((100*to_save)/(1024*quota_used)), len(big_messages)))
     # Close the connection
     M.logout()
