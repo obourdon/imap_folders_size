@@ -187,10 +187,10 @@ if __name__ == '__main__':
     biggest = []
     for msg in big_messages:
         msg_from, msg_to, msg_subject = message_subject_from_to(msg)
-        biggest.append([msg.get("ID"), human_readable_size(msg.get("VALUE")), msg.get("DATE"), folder_real_name(msg.get("FOLDER").strip('"')), msg_from, msg_subject])
+        biggest.append([msg.get("ID"), human_readable_size(msg.get("VALUE")), (100.0 * msg.get("VALUE")) / (1024 * quota_used), msg.get("DATE"), folder_real_name(msg.get("FOLDER").strip('"')), msg_from, msg_subject])
         to_save += msg.get("VALUE")
-    print(tabulate.tabulate(biggest, headers=["ID", "Size", "Date", "Folder", "From", "Subject"]))
-    print("You can save %s (%.2f%%) by cleaning up the %d biggest messages\n" % (human_readable_size(to_save), ((100*to_save)/(1024*quota_used)), len(big_messages)))
+    print(tabulate.tabulate(biggest, headers=["ID", "Size", "%", "Date", "Folder", "From", "Subject"], floatfmt=".2f"))
+    print("\nYou can save %s (%.2f%%) by cleaning up the %d biggest messages\n" % (human_readable_size(to_save), ((100*to_save)/(1024*quota_used)), len(big_messages)))
     # Close the connection
     M.logout()
 
