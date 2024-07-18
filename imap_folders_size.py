@@ -105,10 +105,7 @@ def folder_size(M, folder_entry):
 
 
 def env_or_tty_passwd():
-    lpasswd = os.getenv("LOGPASSWD")
-    if lpasswd == None:
-        lpasswd = getpass.getpass('Enter password for user %s > ' % os.environ['LOGNAME'])
-    return lpasswd
+    return os.getenv("LOGPASSWD") or getpass.getpass('Enter password for user %s > ' % os.environ['LOGNAME'])
 
 
 # Press the green button in the gutter to run the script.
