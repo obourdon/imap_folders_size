@@ -18,6 +18,12 @@ imap_server = "imap.free.fr"
 #imap_server = "imap.gmail.com"
 
 
+def trace_msg(msg):
+    if os.getenv("NO_TRACE"):
+        return
+    print(msg, datetime.now().strftime("%H:%M:%S"))
+
+
 def human_readable_size(size, suffix='B', decimal_places=1, units_offset=0):
     offset = ' '*units_offset
     for unit in ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y']:
@@ -110,6 +116,7 @@ def env_or_tty_passwd():
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
+    trace_msg('STARTING')
     # Open a connection to the IMAP server using SSL and proper port
     M = imaplib.IMAP4_SSL(imap_server, 993)
     # User is retrieved from LOGNAME environment variable
@@ -141,6 +148,7 @@ if __name__ == '__main__':
     except Exception as e:
         print('IMAP capabilities error: %s' % (e))
 
+    trace_msg('QUOTAS ACQUIRED')
     # The list of all folders
     result, folders = M.list()
     if result != 'OK':
@@ -155,6 +163,7 @@ if __name__ == '__main__':
     message_sizes = []
     message_dates = []
     #pdb.set_trace()
+    trace_msg('FOLDERS ACQUIRED')
     for folder in folders:
         folder_infos = folder_size(M, folder)
         folder_stats = [folder_infos['name'], folder_infos['messages'], folder_infos['size']]
@@ -173,6 +182,7 @@ if __name__ == '__main__':
     print(tabulate.tabulate(imap_folders, headers=hfields, floatfmt=".2f"))
     if quota_used != None and quota_total != None:
         print("\nQuotas Used: %s Total: %s Usage: %.2f%%" % (human_readable_size(quota_used*1024), human_readable_size(quota_total*1024), (100*quota_used)/quota_total))
+    trace_msg('BASIC STATS PRINTED')
     sdata = np.array(list(map(lambda x: x.get("VALUE"), message_sizes)))
     ddata = np.array(list(map(lambda x: x.get("VALUE"), message_dates)))
     print("\nMessage sizes: [{} - {}]".format(sdata.min(), sdata.max()))
@@ -190,5 +200,6 @@ if __name__ == '__main__':
     print("\nYou can save %s (%.2f%%) by cleaning up the %d biggest messages\n" % (human_readable_size(to_save), ((100*to_save)/(1024*quota_used)), len(big_messages)))
     # Close the connection
     M.logout()
+    trace_msg('DETAILED STATS PRINTED')
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
