@@ -54,17 +54,21 @@ def message_subject_from_to(msg):
     if result != 'OK':
         print('%s IMAP folder select returned %s' % (mbx, result))
         return "(None)", "(None)", "(None)"
-    result, msg_data = M.fetch(str(msg_id), "(RFC822)")
+    # Only retrieve mail headers for faster computation
+    result, msg_data = M.fetch(str(msg_id), "(RFC822.HEADER)")
     if result != 'OK':
         print('%s IMAP folder fetch %s returned %s' % (mbx, msg_id, result))
         return "(None)", "(None)", "(None)"
-    for response_part in msg_data:
+    # Only keep the proper typed results
+    for response_part in filter(lambda x: isinstance(x, tuple), msg_data):
+        # Should always be true but for more safety
         if isinstance(response_part, tuple):
             try:
-                msg = email.message_from_string(response_part[1].decode('utf-8'))
-                msg_from = str(email.header.make_header(email.header.decode_header(msg['From'])))
-                msg_to = str(email.header.make_header(email.header.decode_header(msg['To'])))
-                msg_subject = str(email.header.make_header(email.header.decode_header(msg['Subject'])))
+                utf8_msg = email.message_from_string(response_part[1].decode('utf-8'))
+                # The IMAPlib module can return empty From/To/Subject headers therefore use get instead of dict keys
+                msg_from = str(email.header.make_header(email.header.decode_header(utf8_msg.get('From', '**NONE**'))))
+                msg_to = str(email.header.make_header(email.header.decode_header(utf8_msg.get('To', '**NONE**'))))
+                msg_subject = str(email.header.make_header(email.header.decode_header(utf8_msg.get('Subject', '**NONE**'))))
                 return msg_from, msg_to, msg_subject
             except Exception as e:
                 print('%s IMAP folder message %s can not decode: %s' % (mbx, msg_id, e))
