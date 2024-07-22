@@ -91,9 +91,9 @@ def folder_size(M, folder_entry):
         print('%s IMAP folder select returned %s (folder_size)' % (mbx, result))
         return {}
     # Go through all the messages in the selected folder
-    typ, msg = M.search(None, 'ALL')
+    typ, msgs = M.search(None, 'ALL')
     # Find the first and last messages
-    m = [int(x) for x in msg[0].split()]
+    m = [int(x) for x in msgs[0].split()]
     if m:
         m.sort()
         msgset = "%d:%d" % (m[0], m[-1])
