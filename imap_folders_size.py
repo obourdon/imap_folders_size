@@ -101,7 +101,23 @@ def folder_size(M, folder_entry):
         if result != 'OK':
             print('IMAP messages sizes returned %s' % (result))
             return {}
-        for msg in map(lambda x: dict(list(zip(*[iter(re.sub(r'([1-9][0-9]*) \((.*)\)', r'ID,\1,\2', str(x.replace(b'"',b'').replace(b' RFC822.SIZE ', b',SIZE,').replace(b'INTERNALDATE ', b'DATE,'), 'utf-8')).split(','))] * 2))), msizes):
+        for msg in map(
+            lambda x: dict(
+                list(
+                    zip(
+                        *[iter(re.sub(
+                            r'([1-9][0-9]*) \((.*)\)', r'ID,\1,\2',
+                            str(
+                                x.replace(b'"',b'')
+                                .replace(b' RFC822.SIZE ', b',SIZE,')
+                                .replace(b' INTERNALDATE ', b',DATE,')
+                                .replace(b'RFC822.SIZE ', b'SIZE,')
+                                .replace(b'INTERNALDATE ', b'DATE,'), 'utf-8'))
+                            .split(','))] * 2
+                        )
+                    )
+                ),
+            msizes):
             msg_size = int(msg['SIZE'])
             msg_date = None
             try:
