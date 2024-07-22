@@ -170,12 +170,13 @@ if __name__ == '__main__':
     trace_msg('FOLDERS ACQUIRED')
     for folder in folders:
         folder_infos = folder_size(M, folder)
-        folder_stats = [folder_infos['name'], folder_infos['messages'], folder_infos['size']]
-        if quota_used != None and quota_used != 0:
-            folder_stats.append((100.0 * folder_infos['size']) / (1024 * quota_used))
-        imap_folders.append(folder_stats)
-        nmessages_total += imap_folders[-1][1]
-        size_total += imap_folders[-1][2]
+        if folder_infos.get('name'):
+            folder_stats = [folder_infos['name'], folder_infos['messages'], folder_infos['size']]
+            if quota_used != None and quota_used != 0:
+                folder_stats.append((100.0 * folder_infos['size']) / (1024 * quota_used))
+            imap_folders.append(folder_stats)
+            nmessages_total += imap_folders[-1][1]
+            size_total += imap_folders[-1][2]
 
     summary = ["Sum", nmessages_total, size_total]
     hfields = ["Folder", "# Msg", "Size"]
