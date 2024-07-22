@@ -48,16 +48,16 @@ def message_subject_from_to(msg):
     msg_id = msg.get('ID')
     mbx = msg.get('FOLDER')
     if mbx == None or msg_id == None:
-        print('Unable to retrieve folder for message %s in %s' % (msg.get('ID'), msg.get('FOLDER')))
+        print(f"Unable to retrieve folder for message {msg.get('ID')} in {msg.get('FOLDER')}")
         return "(None)", "(None)", "(None)"
     result, nb = M.select(mbx, readonly=1)
     if result != 'OK':
-        print('%s IMAP folder select returned %s (message_subject_from_to)' % (mbx, result))
+        print(f"{mbx} IMAP folder select returned {result} (message_subject_from_to)")
         return "(None)", "(None)", "(None)"
     # Only retrieve mail headers for faster computation
     result, msg_data = M.fetch(str(msg_id), "(RFC822.HEADER)")
     if result != 'OK':
-        print('%s IMAP folder fetch %s returned %s' % (mbx, msg_id, result))
+        print(f"{mbx} IMAP folder fetch {msg_id} returned {result}")
         return "(None)", "(None)", "(None)"
     # Only keep the proper typed results
     for response_part in filter(lambda x: isinstance(x, tuple), msg_data):
@@ -71,7 +71,7 @@ def message_subject_from_to(msg):
                 msg_subject = str(email.header.make_header(email.header.decode_header(utf8_msg.get('Subject', '**NONE**'))))
                 return msg_from, msg_to, msg_subject
             except Exception as e:
-                print('%s IMAP folder message %s can not decode: %s' % (mbx, msg_id, e))
+                print(f"{mbx} IMAP folder message {msg_id} can not decode: {e}")
     return "(None)", "(None)", "(None)"
 
 
@@ -81,14 +81,14 @@ def folder_size(M, folder_entry):
     nb = '0'
     imap_folder_match = imap_folder_re.match(str(folder_entry, 'utf-8'))
     if imap_folder_match == None:
-        print('IMAP folder %s does not match regexp' % (folder_entry))
+        print(f"IMAP folder {folder_entry} does not match regexp")
         return {}
     folder_items = imap_folder_match.group(1).split()
     # Select the desired folder
     mbx = '"' + ' '.join(map(lambda x: x.strip('"'), folder_items[1:])) + '"'
     result, nb = M.select(mbx, readonly=1)
     if result != 'OK':
-        print('%s IMAP folder select returned %s (folder_size)' % (mbx, result))
+        print(f"{mbx} IMAP folder select returned {result} (folder_size)")
         return {}
     # Go through all the messages in the selected folder
     typ, msgs = M.search(None, 'ALL')
@@ -96,10 +96,10 @@ def folder_size(M, folder_entry):
     m = [int(x) for x in msgs[0].split()]
     if m:
         m.sort()
-        msgset = "%d:%d" % (m[0], m[-1])
+        msgset = f"{m[0]}:{m[-1]}"
         result, msizes = M.fetch(msgset, "(INTERNALDATE RFC822.SIZE)")
         if result != 'OK':
-            print('IMAP messages sizes returned %s' % (result))
+            print(f"IMAP messages sizes returned {result}")
             return {}
         for msg in map(
             lambda x: dict(
@@ -124,14 +124,14 @@ def folder_size(M, folder_entry):
               msg_date = datetime.strptime(msg['DATE'], '%d-%b-%Y %H:%M:%S %z')
               list_append(msg_date, name="date", extras={'ID': int(msg['ID']), 'FOLDER': mbx, 'SIZE': msg_size})
             except ValueError as e:
-                print('IMAP message date decoding error: %s %s' % (msg[1], e))
+                print(f"IMAP message date decoding error: {msg[1]} {e}")
             list_append(msg_size, name="size", extras={'ID': int(msg['ID']), 'FOLDER': mbx, 'DATE': msg_date})
             fs += msg_size
     return {'name': folder_real_name(mbx.strip('"')), 'messages': int(nb[0]), 'size': fs}
 
 
 def env_or_tty_passwd():
-    return os.getenv("LOGPASSWD") or getpass.getpass('Enter password for user %s > ' % os.environ['LOGNAME'])
+    return os.getenv("LOGPASSWD") or getpass.getpass(f"Enter password for user {os.environ['LOGNAME']} > ")
 
 
 # Press the green button in the gutter to run the script.
@@ -146,7 +146,7 @@ if __name__ == '__main__':
     try:
         M.login(user, passwd)
     except imaplib.IMAP4.error as e:
-        print('IMAP Login error: %s' % (e))
+        print(f"IMAP Login error: {e}")
         sys.exit(1)
 
     # List server capabilities
@@ -163,16 +163,16 @@ if __name__ == '__main__':
                 raise Exception('Unable to parse IMAP server quotas')
             quota_used, quota_total = int(quota_infos.group(1)), int(quota_infos.group(2))
     except imaplib.IMAP4.error as e:
-        print('IMAP capabilities error: %s' % (e))
+        print(f"IMAP capabilities error: {e}")
         sys.exit(1)
     except Exception as e:
-        print('IMAP capabilities error: %s' % (e))
+        print(f"IMAP capabilities error: {e}")
 
     trace_msg('QUOTAS ACQUIRED')
     # The list of all folders
     result, folders = M.list()
     if result != 'OK':
-        print('IMAP folder list returned %s' % (result))
+        print(f"IMAP folder list returned {result}")
         sys.exit(1)
 
     nmessages_total = 0
@@ -202,14 +202,14 @@ if __name__ == '__main__':
     imap_folders.append(summary)
     print(tabulate.tabulate(imap_folders, headers=hfields, floatfmt=".2f"))
     if quota_used != None and quota_total != None:
-        print("\nQuotas Used: %s Total: %s Usage: %.2f%%" % (human_readable_size(quota_used*1024), human_readable_size(quota_total*1024), (100*quota_used)/quota_total))
+        print(f"\nQuotas Used: {human_readable_size(quota_used*1024)} Total: {human_readable_size(quota_total*1024)} Usage: {(100*quota_used)/quota_total:.2f}%")
     trace_msg('BASIC STATS PRINTED')
     sdata = np.array(list(map(lambda x: x.get("VALUE"), message_sizes)))
     ddata = np.array(list(map(lambda x: x.get("VALUE"), message_dates)))
-    print("\nMessage sizes: [{} - {}]".format(sdata.min(), sdata.max()))
-    print("\nMessage dates: [{} - {}]".format(ddata.min(), ddata.max()))
+    print(f"\nMessage sizes: [{sdata.min()} - {sdata.max()}]")
+    print(f"\nMessage dates: [{ddata.min()} - {ddata.max()}]")
     over95percent = int(sdata.mean() + 2 * sdata.std())
-    print("\nMessages over {} (upper 95% quartile):\n".format(human_readable_size(over95percent)))
+    print(f"\nMessages over {human_readable_size(over95percent)} (upper 95% quartile):\n")
     to_save = 0
     big_messages = sorted(list(filter(lambda x: x.get("VALUE", 0) > over95percent, message_sizes)), key=lambda x: x.get("VALUE"))
     biggest = []
@@ -218,7 +218,7 @@ if __name__ == '__main__':
         biggest.append([msg.get("ID"), human_readable_size(msg.get("VALUE")), (100.0 * msg.get("VALUE")) / (1024 * quota_used), msg.get("DATE"), folder_real_name(msg.get("FOLDER").strip('"')), msg_from, msg_subject])
         to_save += msg.get("VALUE")
     print(tabulate.tabulate(biggest, headers=["ID", "Size", "%", "Date", "Folder", "From", "Subject"], floatfmt=".2f"))
-    print("\nYou can save %s (%.2f%%) by cleaning up the %d biggest messages\n" % (human_readable_size(to_save), ((100*to_save)/(1024*quota_used)), len(big_messages)))
+    print(f"\nYou can save {human_readable_size(to_save)} ({((100*to_save)/(1024*quota_used)):.2f}%) by cleaning up the {len(big_messages)} biggest messages\n")
     # Close the connection
     M.logout()
     trace_msg('DETAILED STATS PRINTED')
