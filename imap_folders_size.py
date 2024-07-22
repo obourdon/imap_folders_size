@@ -52,7 +52,7 @@ def message_subject_from_to(msg):
         return "(None)", "(None)", "(None)"
     result, nb = M.select(mbx, readonly=1)
     if result != 'OK':
-        print('%s IMAP folder select returned %s' % (mbx, result))
+        print('%s IMAP folder select returned %s (message_subject_from_to)' % (mbx, result))
         return "(None)", "(None)", "(None)"
     # Only retrieve mail headers for faster computation
     result, msg_data = M.fetch(str(msg_id), "(RFC822.HEADER)")
@@ -82,14 +82,14 @@ def folder_size(M, folder_entry):
     imap_folder_match = imap_folder_re.match(str(folder_entry, 'utf-8'))
     if imap_folder_match == None:
         print('IMAP folder %s does not match regexp' % (folder_entry))
-        return 0, 0
+        return {}
     folder_items = imap_folder_match.group(1).split()
     # Select the desired folder
     mbx = '"' + ' '.join(map(lambda x: x.strip('"'), folder_items[1:])) + '"'
     result, nb = M.select(mbx, readonly=1)
     if result != 'OK':
-        print('%s IMAP folder select returned %s' % (mbx, result))
-        return -1, 0
+        print('%s IMAP folder select returned %s (folder_size)' % (mbx, result))
+        return {}
     # Go through all the messages in the selected folder
     typ, msg = M.search(None, 'ALL')
     # Find the first and last messages
@@ -100,7 +100,7 @@ def folder_size(M, folder_entry):
         result, msizes = M.fetch(msgset, "(INTERNALDATE RFC822.SIZE)")
         if result != 'OK':
             print('IMAP messages sizes returned %s' % (result))
-            return -1, 0
+            return {}
         for msg in map(lambda x: dict(list(zip(*[iter(re.sub(r'([1-9][0-9]*) \((.*)\)', r'ID,\1,\2', str(x.replace(b'"',b'').replace(b' RFC822.SIZE ', b',SIZE,').replace(b'INTERNALDATE ', b'DATE,'), 'utf-8')).split(','))] * 2))), msizes):
             msg_size = int(msg['SIZE'])
             msg_date = None
