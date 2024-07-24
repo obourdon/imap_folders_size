@@ -7,3 +7,5 @@
 - Look in result files and convert accented chars to be printable
 
 - Use OOP for easier reuse and code factorization
+
+- Fix/differentiate evaluation of quotas on Gmail as STORAGE and MAIL quota are mismatched. 75% of 10Gb whereas script says total sum of folders is 3243283140 (aka 3Gb)
