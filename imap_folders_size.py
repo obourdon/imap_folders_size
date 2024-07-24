@@ -7,13 +7,15 @@
 # LOGNAME=my-email
 # LOGPASSWD=xxxxx
 
-import email, getpass, imapclient, imaplib, os, pdb, re, sys, tabulate
+import email, getpass, imapclient, imaplib, os, re, sys, tabulate
 from datetime import datetime
 import numpy as np
 
 imap_folder_re = re.compile(r"^\([^)]*\) (.*)$")
 imap_quota_re = re.compile(r"^\"[^\"]*\" \(STORAGE (\d+) (\d+)\)$")
-
+special_folder_flags = set(('Noselect', 'All', 'Important'))
+known_folder_flags = set(('HasNoChildren', 'HasChildren', 'Drafts', 'Sent', 'Junk', 'Trash', 'Flagged'))
+known_folder_flags.update(special_folder_flags)
 imap_server = "imap.free.fr"
 #imap_server = "imap.gmail.com"
 
@@ -79,13 +81,27 @@ def folder_size(M, folder_entry):
     global message_sizes, message_dates, min_max
     fs = 0
     nb = '0'
+    # folder_entry.decode().split(' "/" ')
+    # 2 element tuple
     imap_folder_match = imap_folder_re.match(str(folder_entry, 'utf-8'))
     if imap_folder_match == None:
         print(f"IMAP folder {folder_entry} does not match regexp")
         return {}
     folder_items = imap_folder_match.group(1).split()
-    # Select the desired folder
+    # str(folder_entry, 'utf-8').split(' "/" ') same as folder_entry.decode().split(' "/" ')
+    folder_flags = eval(','.join(folder_entry.decode().split(' "/" ')[0].replace('\\','').split(' ')).replace('(','("').replace(',','","').replace(')','",)'))
+    s1 = set(folder_flags)
+    special_folder = s1.intersection(special_folder_flags)
+    # Folder name only
     mbx = '"' + ' '.join(map(lambda x: x.strip('"'), folder_items[1:])) + '"'
+    # Folder is not selectable or is tagged with special meaning
+    if len(special_folder) > 0:
+        print(f"{mbx} IMAP folder not processed {special_folder} (folder_size)")
+        return {}
+    unknown_folder_flags = s1.difference(known_folder_flags)
+    if len(unknown_folder_flags) > 0:
+        print(f"{mbx} IMAP folder got unknown flag(s) -> {unknown_folder_flags}")
+    # Select the desired folder
     result, nb = M.select(mbx, readonly=1)
     if result != 'OK':
         print(f"{mbx} IMAP folder select returned {result} (folder_size)")
@@ -182,7 +198,6 @@ if __name__ == '__main__':
     min_max = {'size_min': None, 'size_max': None, 'date_min': None, 'date_max': None}
     message_sizes = []
     message_dates = []
-    #pdb.set_trace()
     trace_msg('FOLDERS ACQUIRED')
     for folder in folders:
         folder_infos = folder_size(M, folder)
