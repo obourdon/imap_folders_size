@@ -5,3 +5,5 @@
 - histograms message sizes + message dates
 
 - Look in result files and convert accented chars to be printable
+
+- Use OOP for easier reuse and code factorization
