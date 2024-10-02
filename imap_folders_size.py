@@ -2,8 +2,7 @@
 
 # LOGNAME=my-email
 # LOGPASSWD=xxxxx
-
-import pdb
+# IMAP_SERVER=yyyy (default to imap.gmail.com)
 
 from datetime import datetime
 import email
@@ -46,8 +45,7 @@ known_folder_flags = set((
 known_folder_flags.update(special_folder_flags)
 
 # Other globalss
-# imap_server = "imap.free.fr"
-imap_server = "imap.gmail.com"
+imap_server = os.getenv("IMAP_SERVER") or "imap.gmail.com"
 
 
 def trace_msg(msg):
@@ -72,17 +70,19 @@ def folder_real_name(folder, decoded=True):
 
 
 def message_subject_from_to(
-    cnx: imaplib.IMAP4_SSL,
-    msg: dict[str, str],
-    ) -> tuple[str, str, str]:
+        cnx: imaplib.IMAP4_SSL,
+        msg: dict[str, str],
+        ) -> tuple[str, str, str]:
     msg_id = msg.get('id')
     mbx = msg.get('folder')
     if not mbx or not msg_id:
-        print(f"Unable to retrieve folder for message {msg.get('id')} in {msg.get('folder')}")
+        print("Unable to retrieve folder for message " +
+              f"{msg.get('id')} in {msg.get('folder')}")
         return "(None)", "(None)", "(None)"
     result, nb = cnx.select(mbx, readonly=1)
     if result != 'OK':
-        print(f"{mbx} IMAP folder select returned {result} (message_subject_from_to)")
+        print(f"{mbx} IMAP folder select returned {result} " +
+              "(message_subject_from_to)")
         return "(None)", "(None)", "(None)"
     # Only retrieve mail headers for faster computation
     result, msg_data = cnx.fetch(str(msg_id), "(RFC822.HEADER)")
@@ -94,14 +94,30 @@ def message_subject_from_to(
         # Should always be true but for more safety
         if isinstance(response_part, tuple):
             try:
-                utf8_msg = email.message_from_string(response_part[1].decode('utf-8'))
-                # The IMAPlib module can return empty From/To/Subject headers therefore use get instead of dict keys
-                msg_from = str(email.header.make_header(email.header.decode_header(utf8_msg.get('From', '**NONE**'))))
-                msg_to = str(email.header.make_header(email.header.decode_header(utf8_msg.get('To', '**NONE**'))))
-                msg_subject = str(email.header.make_header(email.header.decode_header(utf8_msg.get('Subject', '**NONE**'))))
+                utf8_msg = email.message_from_string(
+                    response_part[1].decode('utf-8'),
+                    )
+                # The IMAPlib module can return empty From/To/Subject headers
+                # therefore use get instead of dict keys
+                msg_from = str(
+                    email.header.make_header(
+                        email.header.decode_header(
+                            utf8_msg.get('From', '**NONE**')
+                            )))
+                msg_to = str(
+                    email.header.make_header(
+                        email.header.decode_header(
+                            utf8_msg.get('To', '**NONE**')
+                            )))
+                msg_subject = str(
+                    email.header.make_header(
+                        email.header.decode_header(
+                            utf8_msg.get('Subject', '**NONE**')
+                            )))
                 return msg_from, msg_to, msg_subject
             except Exception as e:
-                print(f"{mbx} IMAP folder message {msg_id} can not decode: {e}")
+                print(f"{mbx} IMAP folder message {msg_id} " +
+                      f"can not decode: {e}")
     return "(None)", "(None)", "(None)"
 
 
@@ -109,7 +125,8 @@ def parse_message_basic_attributes(imap_email_infos: str) -> dict[str, str]:
     m_attrs = imap_message_attributes['ID'].match(imap_email_infos)
     # TODO: set how to report this upstream
     if not m_attrs:
-        print(f'Error parsing {imap_email_infos} (parse_message_basic_attributes)')
+        print(f"Error parsing {imap_email_infos} " +
+              "(parse_message_basic_attributes)")
     ret = {'ID': m_attrs[1]}
     for attr in ['FLAGS', 'SIZE', 'DATE']:
         c_attr = imap_message_attributes[attr].match(m_attrs[2])
@@ -129,25 +146,38 @@ def folder_size(
     # 2 element tuple
     imap_folder_match = imap_folder_re.match(str(folder_entry, 'utf-8'))
     if not imap_folder_match:
-        return Exception(f"IMAP folder {folder_entry} does not match regexp (folder_size)")
+        return Exception(f"IMAP folder {folder_entry} does not match " +
+                         "regexp (folder_size)")
     folder_items = imap_folder_match.group(1).split()
-    # str(folder_entry, 'utf-8').split(' "/" ') same as folder_entry.decode().split(' "/" ')
-    folder_flags = eval(','.join(folder_entry.decode().split(' "/" ')[0].replace('\\','').split(' ')).replace('(','("').replace(',','","').replace(')','",)'))
+    # TODO: use other regexp and split on DELIMITER from regexp
+    # str(folder_entry, 'utf-8').split(' "/" ') same as
+    # folder_entry.decode().split(' "/" ')
+    folder_flags = eval(','.join(
+        folder_entry.decode().split(
+            ' "/" ')[0].replace(
+                '\\', '').split(
+                    ' ')).replace(
+                        '(', '("').replace(
+                            ',', '","').replace(
+                                ')', '",)'))
     s1 = set(folder_flags)
     special_folder = s1.intersection(special_folder_flags)
     # Folder name only
     mbx = '"' + ' '.join(map(lambda x: x.strip('"'), folder_items[1:])) + '"'
     # Folder is not selectable or is tagged with special meaning
     if len(special_folder) > 0:
-        return Exception(f"{mbx} IMAP folder not processed {special_folder} (folder_size)")
+        return Exception(f"{mbx} IMAP folder not processed {special_folder} " +
+                         "(folder_size)")
     unknown_folder_flags = s1.difference(known_folder_flags)
     # TODO: see how to report this better upstream
     if len(unknown_folder_flags) > 0:
-        print(f"{mbx} IMAP folder got unknown flag(s) -> {unknown_folder_flags} (folder_size)")
+        print(f"{mbx} IMAP folder got unknown flag(s) -> " +
+              f"{unknown_folder_flags} (folder_size)")
     # Select the desired folder
     result, nb = cnx.select(mbx, readonly=1)
     if result != 'OK':
-        return Exception(f"{mbx} IMAP folder select returned {result} (folder_size)")
+        return Exception(f"{mbx} IMAP folder select returned {result} " +
+                         "(folder_size)")
     # TODO: do some meaningful computation with flags
     # flags = cnx.response('FLAGS')
     # RECENT response element does not seem to be supported (anymore?)
@@ -166,10 +196,12 @@ def folder_size(
     # Go through all the messages in the selected folder
     typ, msgs = cnx.search(None, 'ALL')
     if typ != 'OK':
-        return Exception(f"{mbx} IMAP folder search returned bad status {typ} (and {msgs}) (folder_size)")
+        return Exception(f"{mbx} IMAP folder search returned bad status " +
+                         f"{typ} (and {msgs}) (folder_size)")
     m = [int(x) for x in msgs[0].split()]
     if not m:
-        return Exception(f"{mbx} IMAP folder search returned empty list {msgs} (folder_size)")
+        return Exception(f"{mbx} IMAP folder search returned empty list " +
+                         f"{msgs} (folder_size)")
     # Find the first and last messages
     # requires the list of IDs to be sorted
     m.sort()
@@ -179,12 +211,17 @@ def folder_size(
     # result, msizes = cnx.fetch(msgset, "(FLAGS INTERNALDATE RFC822.SIZE)")
     result, msizes = cnx.fetch(msgset, "FAST")
     # TODO: potentially add further email message details
-    # result, msizes = cnx.fetch(msgset, "(FLAGS INTERNALDATE RFC822.SIZE BODY.PEEK[HEADER.FIELDS (From To Cc Bcc Subject Date Message-ID Priority X-Priority References Newsgroups In-Reply-To Content-Type Reply-To)])")
+    # result, msizes = cnx.fetch(msgset, "(FLAGS INTERNALDATE RFC822.SIZE
+    # BODY.PEEK[HEADER.FIELDS (
+    #   From To Cc Bcc Subject Date Message-ID Priority
+    #   X-Priority References Newsgroups In-Reply-To Content-Type Reply-To)])")
     if result != 'OK':
-        return Exception(f"IMAP messages sizes returned {result} (folder_size)")
+        return Exception(f"IMAP messages sizes returned {result} " +
+                         "(folder_size)")
     # TODO: see how to report this better upstream
     if len(msizes) != int(nb[0]):
-        print(f"{mbx} IMAP folder got unknown flag(s) -> {unknown_folder_flags} (folder_size)")
+        print(f"{mbx} IMAP folder got unknown flag(s) -> " +
+              f"{unknown_folder_flags} (folder_size)")
     messages_infos = []
     for msg in map(
         lambda x: parse_message_basic_attributes(str(x, 'utf-8')),
@@ -199,7 +236,8 @@ def folder_size(
                 )
         except ValueError as e:
             # TODO: see hoe to report this better upstream
-            print(f"IMAP message date decoding error: {msg[1]} {e} (folder_size)")
+            print(f"IMAP message date decoding error: {msg[1]} " +
+                  f"{e} (folder_size)")
         messages_infos.append(
             {
                 'id': msg.get('ID', 0),
