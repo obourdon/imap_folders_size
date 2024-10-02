@@ -7,3 +7,5 @@
 - Look in result files and convert accented chars to be printable
 
 - Use OOP for easier reuse and code factorization
+
+- You can save 2.0GB (2.77%) by cleaning up the 301 biggest messages -> % of quotas + % of total + 301 = x% of total # msgs

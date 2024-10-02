@@ -71,19 +71,14 @@ def folder_real_name(folder, decoded=True):
     return folder
 
 
-def list_append(v, name="size", extras={}):
-    cmd = "message_" + name + "s.append({**extras, **{'VALUE': v}})"
-    eval(cmd)
-
-
 def message_subject_from_to(
     cnx: imaplib.IMAP4_SSL,
     msg: dict[str, str],
     ) -> tuple[str, str, str]:
-    msg_id = msg.get('ID')
-    mbx = msg.get('FOLDER')
+    msg_id = msg.get('id')
+    mbx = msg.get('folder')
     if not mbx or not msg_id:
-        print(f"Unable to retrieve folder for message {msg.get('ID')} in {msg.get('FOLDER')}")
+        print(f"Unable to retrieve folder for message {msg.get('id')} in {msg.get('folder')}")
         return "(None)", "(None)", "(None)"
     result, nb = cnx.select(mbx, readonly=1)
     if result != 'OK':
@@ -128,7 +123,6 @@ def folder_size(
     folder_entry: bytes,
     returned_folder_attributes: dict[str, str | int],
         ) -> Exception | None:
-    ### global message_dates, min_max
     fs = 0
     nb = '0'
     # folder_entry.decode().split(' "/" ')
@@ -203,30 +197,16 @@ def folder_size(
                 msg['DATE'],
                 '%d-%b-%Y %H:%M:%S %z'
                 )
-            list_append(
-                msg_date,
-                name="date",
-                extras={
-                    'ID': int(msg['ID']),
-                    'FOLDER': mbx,
-                    'SIZE': msg_size
-                    })
         except ValueError as e:
             # TODO: see hoe to report this better upstream
             print(f"IMAP message date decoding error: {msg[1]} {e} (folder_size)")
-        list_append(
-            msg_size,
-            name="size",
-            extras={
-                'ID': int(msg['ID']),
-                'FOLDER': mbx,
-                'DATE': msg_date
-                })
         messages_infos.append(
             {
+                'id': msg.get('ID', 0),
                 'size': msg_size,
                 'date': msg_date,
-                'flags': msg.get('FLAGS', '').split()
+                'flags': msg.get('FLAGS', '').split(),
+                'folder': mbx,
             })
         if 'Seen' not in msg.get('FLAGS', ''):
             unread_emails += 1
@@ -324,14 +304,7 @@ if __name__ == '__main__':
     size_total = 0
 
     imap_folders = []
-    min_max = {
-        'size_min': None,
-        'size_max': None,
-        'date_min': None,
-        'date_max': None
-        }
-    message_sizes = []
-    message_dates = []
+    messages_infos = []
     for folder in folders:
         folder_infos = dict()
         ex = folder_size(cnx, folder, folder_infos)
@@ -352,10 +325,7 @@ if __name__ == '__main__':
             nmessages_total += folder_infos['messages']
             size_total += folder_infos['size']
             nunread_total += folder_infos['unread']
-            # Feed  message_sizes and message_dates with folder_infos['']
-            #pdb.set_trace()
-            #for m in  folder_infos.get('infos', []):
-            #    pass
+            messages_infos.extend(folder_infos.get('infos', []))
     summary = ["Sum", nmessages_total, nunread_total, size_total]
     hfields = ["Folder", "# Msg", "# Unread", "Size"]
     if quota_used:
@@ -367,20 +337,19 @@ if __name__ == '__main__':
         print(f"\nQuotas Used: {human_readable_size(quota_used*1024)} Total: {human_readable_size(quota_total*1024)} Usage: {(100*quota_used)/quota_total:.2f}%")
         if 'gmail.com' in imap_server:
             print(f'Email related: Total messages size: {human_readable_size(size_total)} Used%: {(100*size_total)/(1024*quota_used):.2f}% Total%: {(100*size_total)/(1024*quota_total):.2f}%')
-    sdata = np.array(list(map(lambda x: x.get("VALUE"), message_sizes)))
-    ddata = np.array(list(map(lambda x: x.get("VALUE"), message_dates)))
+    sdata = np.array(list(map(lambda x: x.get("size"), messages_infos)))
+    ddata = np.array(list(map(lambda x: x.get("date"), messages_infos)))
     print(f"\nMessage sizes: [{sdata.min()} - {sdata.max()}]")
     print(f"\nMessage dates: [{ddata.min()} - {ddata.max()}]")
     over95percent = int(sdata.mean() + 2 * sdata.std())
     print(f"\nMessages over {human_readable_size(over95percent)} (upper 95% quartile):\n")
     to_save = 0
-    #pdb.set_trace()
-    big_messages = sorted(list(filter(lambda x: x.get("VALUE", 0) > over95percent, message_sizes)), key=lambda x: x.get("VALUE"))
+    big_messages = sorted(list(filter(lambda x: x.get("size", 0) > over95percent, messages_infos)), key=lambda x: x.get("size"))
     biggest = []
     for msg in big_messages:
         msg_from, msg_to, msg_subject = message_subject_from_to(cnx, msg)
-        biggest.append([msg.get("ID"), human_readable_size(msg.get("VALUE")), (100.0 * msg.get("VALUE")) / (1024 * quota_used), msg.get("DATE"), folder_real_name(msg.get("FOLDER").strip('"')), msg_from, msg_subject])
-        to_save += msg.get("VALUE")
+        biggest.append([msg.get("id"), human_readable_size(msg.get("size")), (100.0 * msg.get("size")) / (1024 * quota_used), msg.get("date"), folder_real_name(msg.get("folder").strip('"')), msg_from, msg_subject])
+        to_save += msg.get("size")
     print(tabulate.tabulate(biggest, headers=["ID", "Size", "%", "Date", "Folder", "From", "Subject"], floatfmt=".2f"))
     print(f"\nYou can save {human_readable_size(to_save)} ({((100*to_save)/(1024*quota_used)):.2f}%) by cleaning up the {len(big_messages)} biggest messages\n")
     # Close the connection
