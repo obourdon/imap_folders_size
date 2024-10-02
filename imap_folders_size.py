@@ -22,6 +22,12 @@ import tabulate
 # to segment flags, separator, folder_name
 imap_folder_re = re.compile(r"^\([^)]*\) (.*)$")
 imap_quota_re = re.compile(r"^\"[^\"]*\" \(STORAGE (\d+) (\d+)\)$")
+imap_message_attributes = {
+    'ID': re.compile(r"^(\d+) \((.*)\)$"),
+    'SIZE': re.compile(r".*RFC822.SIZE (\d+).*"),
+    'DATE': re.compile(r".*INTERNALDATE \"([^\"]+)\".*"),
+    'FLAGS': re.compile(r".*FLAGS \(([^\)]+)\).*"),
+}
 
 # Define some constant for IMAP folders flags
 special_folder_flags = set((
@@ -70,18 +76,21 @@ def list_append(v, name="size", extras={}):
     eval(cmd)
 
 
-def message_subject_from_to(msg):
+def message_subject_from_to(
+    cnx: imaplib.IMAP4_SSL,
+    msg: dict[str, str],
+    ) -> tuple[str, str, str]:
     msg_id = msg.get('ID')
     mbx = msg.get('FOLDER')
     if not mbx or not msg_id:
         print(f"Unable to retrieve folder for message {msg.get('ID')} in {msg.get('FOLDER')}")
         return "(None)", "(None)", "(None)"
-    result, nb = XXX.select(mbx, readonly=1)
+    result, nb = cnx.select(mbx, readonly=1)
     if result != 'OK':
         print(f"{mbx} IMAP folder select returned {result} (message_subject_from_to)")
         return "(None)", "(None)", "(None)"
     # Only retrieve mail headers for faster computation
-    result, msg_data = M.fetch(str(msg_id), "(RFC822.HEADER)")
+    result, msg_data = cnx.fetch(str(msg_id), "(RFC822.HEADER)")
     if result != 'OK':
         print(f"{mbx} IMAP folder fetch {msg_id} returned {result}")
         return "(None)", "(None)", "(None)"
@@ -101,37 +110,32 @@ def message_subject_from_to(msg):
     return "(None)", "(None)", "(None)"
 
 
-def parse_message_basic_attributes(x:str) -> dict[str, str | int | datetime]:
-    return dict(
-        list(
-            zip(
-                *[iter(re.sub(
-                    r'([1-9][0-9]*) \((.*)\)', r'ID,\1,\2',
-                    str(
-                        x.replace(b'"', b'')
-                        .replace(b' RFC822.SIZE ', b',SIZE,')
-                        .replace(b' INTERNALDATE ', b',DATE,')
-                        .replace(b'RFC822.SIZE ', b'SIZE,')
-                        .replace(b'INTERNALDATE ', b'DATE,'), 'utf-8')
-                    ).split(','))] * 2
-                )
-            )
-    )
+def parse_message_basic_attributes(imap_email_infos: str) -> dict[str, str]:
+    m_attrs = imap_message_attributes['ID'].match(imap_email_infos)
+    # TODO: set how to report this upstream
+    if not m_attrs:
+        print(f'Error parsing {imap_email_infos} (parse_message_basic_attributes)')
+    ret = {'ID': m_attrs[1]}
+    for attr in ['FLAGS', 'SIZE', 'DATE']:
+        c_attr = imap_message_attributes[attr].match(m_attrs[2])
+        if c_attr:
+            ret[attr] = c_attr[1]
+    return ret
 
 
 def folder_size(
     cnx: imaplib.IMAP4_SSL,
     folder_entry: bytes,
-        ) -> tuple[dict[str, str | int], Exception]:
-    # TODO: prevent usage of globals
-    global message_sizes, message_dates, min_max
+    returned_folder_attributes: dict[str, str | int],
+        ) -> Exception | None:
+    ### global message_dates, min_max
     fs = 0
     nb = '0'
     # folder_entry.decode().split(' "/" ')
     # 2 element tuple
     imap_folder_match = imap_folder_re.match(str(folder_entry, 'utf-8'))
     if not imap_folder_match:
-        return {}, Exception(f"IMAP folder {folder_entry} does not match regexp (folder_size)")
+        return Exception(f"IMAP folder {folder_entry} does not match regexp (folder_size)")
     folder_items = imap_folder_match.group(1).split()
     # str(folder_entry, 'utf-8').split(' "/" ') same as folder_entry.decode().split(' "/" ')
     folder_flags = eval(','.join(folder_entry.decode().split(' "/" ')[0].replace('\\','').split(' ')).replace('(','("').replace(',','","').replace(')','",)'))
@@ -141,7 +145,7 @@ def folder_size(
     mbx = '"' + ' '.join(map(lambda x: x.strip('"'), folder_items[1:])) + '"'
     # Folder is not selectable or is tagged with special meaning
     if len(special_folder) > 0:
-        return {}, Exception(f"{mbx} IMAP folder not processed {special_folder} (folder_size)")
+        return Exception(f"{mbx} IMAP folder not processed {special_folder} (folder_size)")
     unknown_folder_flags = s1.difference(known_folder_flags)
     # TODO: see how to report this better upstream
     if len(unknown_folder_flags) > 0:
@@ -149,7 +153,7 @@ def folder_size(
     # Select the desired folder
     result, nb = cnx.select(mbx, readonly=1)
     if result != 'OK':
-        return {}, Exception(f"{mbx} IMAP folder select returned {result} (folder_size)")
+        return Exception(f"{mbx} IMAP folder select returned {result} (folder_size)")
     # TODO: do some meaningful computation with flags
     # flags = cnx.response('FLAGS')
     # RECENT response element does not seem to be supported (anymore?)
@@ -157,34 +161,39 @@ def folder_size(
     unread_emails = 0
     # No need to further call IMAP server API
     if int(nb[0]) == 0:
-        return {
+        returned_folder_attributes.update({
             'name': folder_real_name(mbx.strip('"')),
             'messages': 0,
             'unread': 0,
             'size': 0,
-            }, None
+            })
+        return None
     # and/or verify that int(nb[0]) == len(msg[0].split())
     # Go through all the messages in the selected folder
     typ, msgs = cnx.search(None, 'ALL')
     if typ != 'OK':
-        return {}, Exception(f"{mbx} IMAP folder search returned bad status {typ} (and {msgs}) (folder_size)")
+        return Exception(f"{mbx} IMAP folder search returned bad status {typ} (and {msgs}) (folder_size)")
     m = [int(x) for x in msgs[0].split()]
     if not m:
-        return {}, Exception(f"{mbx} IMAP folder search returned empty list {msgs} (folder_size)")
+        return Exception(f"{mbx} IMAP folder search returned empty list {msgs} (folder_size)")
     # Find the first and last messages
     # requires the list of IDs to be sorted
     m.sort()
     msgset = f"{m[0]}:{m[-1]}"
-    result, msizes = cnx.fetch(msgset, "(INTERNALDATE RFC822.SIZE)")
+    # Add FLAGS to previously returned messages attributes
+    # Same as FAST. See https://www.rfc-editor.org/rfc/rfc3501#section-6.4.5
+    # result, msizes = cnx.fetch(msgset, "(FLAGS INTERNALDATE RFC822.SIZE)")
+    result, msizes = cnx.fetch(msgset, "FAST")
+    # TODO: potentially add further email message details
+    # result, msizes = cnx.fetch(msgset, "(FLAGS INTERNALDATE RFC822.SIZE BODY.PEEK[HEADER.FIELDS (From To Cc Bcc Subject Date Message-ID Priority X-Priority References Newsgroups In-Reply-To Content-Type Reply-To)])")
     if result != 'OK':
-        return {}, Exception(f"IMAP messages sizes returned {result} (folder_size)")
+        return Exception(f"IMAP messages sizes returned {result} (folder_size)")
     # TODO: see how to report this better upstream
     if len(msizes) != int(nb[0]):
         print(f"{mbx} IMAP folder got unknown flag(s) -> {unknown_folder_flags} (folder_size)")
-    # TODO: may be find a more clever way to properly compute the
-    # size and date whatever the order they are returned in
+    messages_infos = []
     for msg in map(
-        lambda x: parse_message_basic_attributes(x),
+        lambda x: parse_message_basic_attributes(str(x, 'utf-8')),
         msizes
     ):
         msg_size = int(msg['SIZE'])
@@ -204,7 +213,7 @@ def folder_size(
                     })
         except ValueError as e:
             # TODO: see hoe to report this better upstream
-            print(f"IMAP message date decoding error: {msg[1]} {e}")
+            print(f"IMAP message date decoding error: {msg[1]} {e} (folder_size)")
         list_append(
             msg_size,
             name="size",
@@ -213,13 +222,23 @@ def folder_size(
                 'FOLDER': mbx,
                 'DATE': msg_date
                 })
+        messages_infos.append(
+            {
+                'size': msg_size,
+                'date': msg_date,
+                'flags': msg.get('FLAGS', '').split()
+            })
+        if 'Seen' not in msg.get('FLAGS', ''):
+            unread_emails += 1
         fs += msg_size
-    return {
+    returned_folder_attributes.update({
         'name': folder_real_name(mbx.strip('"')),
         'messages': int(nb[0]),
         'unread': unread_emails,
-        'size': fs
-        }, None
+        'size': fs,
+        'infos': messages_infos,
+        })
+    return None
 
 
 def env_or_tty_passwd() -> str:
@@ -301,7 +320,7 @@ if __name__ == '__main__':
         sys.exit(2)
 
     nmessages_total = 0
-    nunread_total= 0
+    nunread_total = 0
     size_total = 0
 
     imap_folders = []
@@ -313,9 +332,9 @@ if __name__ == '__main__':
         }
     message_sizes = []
     message_dates = []
-    trace_msg('FOLDERS ACQUIRED')
     for folder in folders:
-        folder_infos, ex = folder_size(cnx, folder)
+        folder_infos = dict()
+        ex = folder_size(cnx, folder, folder_infos)
         if ex:
             print(f'{error_or_warning(len(folder_infos) > 0)}: got {ex}')
         if folder_infos.get('name'):
@@ -330,10 +349,13 @@ if __name__ == '__main__':
                     (100.0 * folder_infos['size'])
                     / (1024 * quota_used))
             imap_folders.append(folder_stats)
-            nmessages_total += imap_folders[-1][1]
-            size_total += imap_folders[-1][3]
-            nunread_total += imap_folders[-1][2]
-    trace_msg('FOLDERS PROCESSED')
+            nmessages_total += folder_infos['messages']
+            size_total += folder_infos['size']
+            nunread_total += folder_infos['unread']
+            # Feed  message_sizes and message_dates with folder_infos['']
+            #pdb.set_trace()
+            #for m in  folder_infos.get('infos', []):
+            #    pass
     summary = ["Sum", nmessages_total, nunread_total, size_total]
     hfields = ["Folder", "# Msg", "# Unread", "Size"]
     if quota_used:
@@ -345,7 +367,6 @@ if __name__ == '__main__':
         print(f"\nQuotas Used: {human_readable_size(quota_used*1024)} Total: {human_readable_size(quota_total*1024)} Usage: {(100*quota_used)/quota_total:.2f}%")
         if 'gmail.com' in imap_server:
             print(f'Email related: Total messages size: {human_readable_size(size_total)} Used%: {(100*size_total)/(1024*quota_used):.2f}% Total%: {(100*size_total)/(1024*quota_total):.2f}%')
-    trace_msg('BASIC STATS PRINTED')
     sdata = np.array(list(map(lambda x: x.get("VALUE"), message_sizes)))
     ddata = np.array(list(map(lambda x: x.get("VALUE"), message_dates)))
     print(f"\nMessage sizes: [{sdata.min()} - {sdata.max()}]")
@@ -353,10 +374,11 @@ if __name__ == '__main__':
     over95percent = int(sdata.mean() + 2 * sdata.std())
     print(f"\nMessages over {human_readable_size(over95percent)} (upper 95% quartile):\n")
     to_save = 0
+    #pdb.set_trace()
     big_messages = sorted(list(filter(lambda x: x.get("VALUE", 0) > over95percent, message_sizes)), key=lambda x: x.get("VALUE"))
     biggest = []
     for msg in big_messages:
-        msg_from, msg_to, msg_subject = message_subject_from_to(msg)
+        msg_from, msg_to, msg_subject = message_subject_from_to(cnx, msg)
         biggest.append([msg.get("ID"), human_readable_size(msg.get("VALUE")), (100.0 * msg.get("VALUE")) / (1024 * quota_used), msg.get("DATE"), folder_real_name(msg.get("FOLDER").strip('"')), msg_from, msg_subject])
         to_save += msg.get("VALUE")
     print(tabulate.tabulate(biggest, headers=["ID", "Size", "%", "Date", "Folder", "From", "Subject"], floatfmt=".2f"))
