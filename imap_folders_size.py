@@ -292,6 +292,7 @@ if __name__ == '__main__':
         sys.exit(2)
 
     nmessages_total = 0
+    nunread_total= 0
     size_total = 0
 
     imap_folders = []
@@ -313,7 +314,7 @@ if __name__ == '__main__':
                 folder_infos['name'],
                 folder_infos['messages'],
                 folder_infos['unread'],
-                folder_infos['size']
+                folder_infos['size'],
                 ]
             if quota_used:
                 folder_stats.append(
@@ -321,9 +322,10 @@ if __name__ == '__main__':
                     / (1024 * quota_used))
             imap_folders.append(folder_stats)
             nmessages_total += imap_folders[-1][1]
-            size_total += imap_folders[-1][2]
+            size_total += imap_folders[-1][3]
+            nunread_total += imap_folders[-1][2]
     trace_msg('FOLDERS PROCESSED')
-    summary = ["Sum", nmessages_total, size_total]
+    summary = ["Sum", nmessages_total, nunread_total, size_total]
     hfields = ["Folder", "# Msg", "# Unread", "Size"]
     if quota_used:
         hfields.append("%")
