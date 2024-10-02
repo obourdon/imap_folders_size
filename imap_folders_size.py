@@ -113,7 +113,7 @@ def folder_size(
     # 2 element tuple
     imap_folder_match = imap_folder_re.match(str(folder_entry, 'utf-8'))
     if not imap_folder_match:
-        return {}, Exception(f"IMAP folder {folder_entry} does not match regexp")
+        return {}, Exception(f"IMAP folder {folder_entry} does not match regexp (folder_size)")
     folder_items = imap_folder_match.group(1).split()
     # str(folder_entry, 'utf-8').split(' "/" ') same as folder_entry.decode().split(' "/" ')
     folder_flags = eval(','.join(folder_entry.decode().split(' "/" ')[0].replace('\\','').split(' ')).replace('(','("').replace(',','","').replace(')','",)'))
@@ -148,63 +148,66 @@ def folder_size(
     # and/or verify that int(nb[0]) == len(msg[0].split())
     # Go through all the messages in the selected folder
     typ, msgs = cnx.search(None, 'ALL')
-    # TODO: verify that typ == 'OK'
-    # Find the first and last messages
+    if typ != 'OK':
+        return {}, Exception(f"{mbx} IMAP folder search returned bad status {typ} (and {msgs}) (folder_size)")
     m = [int(x) for x in msgs[0].split()]
-    if m:
-        m.sort()
-        msgset = f"{m[0]}:{m[-1]}"
-        result, msizes = cnx.fetch(msgset, "(INTERNALDATE RFC822.SIZE)")
-        if result != 'OK':
-            return {}, Exception(f"IMAP messages sizes returned {result}")
-        # TODO: check that len(msizes) == int(nb[0])
-        # TODO: may be find a more clever way to properly compute the
-        # size and date whatever the order they are returned in
-        for msg in map(
-            lambda x: dict(
-                list(
-                    zip(
-                        *[iter(re.sub(
-                            r'([1-9][0-9]*) \((.*)\)', r'ID,\1,\2',
-                            str(
-                                x.replace(b'"', b'')
-                                .replace(b' RFC822.SIZE ', b',SIZE,')
-                                .replace(b' INTERNALDATE ', b',DATE,')
-                                .replace(b'RFC822.SIZE ', b'SIZE,')
-                                .replace(b'INTERNALDATE ', b'DATE,'), 'utf-8')
-                            ).split(','))] * 2
-                        )
+    if not m:
+        return {}, Exception(f"{mbx} IMAP folder search returned empty list {msgs} (folder_size)")
+    # Find the first and last messages
+    # requires the list of IDs to be sorted
+    m.sort()
+    msgset = f"{m[0]}:{m[-1]}"
+    result, msizes = cnx.fetch(msgset, "(INTERNALDATE RFC822.SIZE)")
+    if result != 'OK':
+        return {}, Exception(f"IMAP messages sizes returned {result}")
+    # TODO: check that len(msizes) == int(nb[0])
+    # TODO: may be find a more clever way to properly compute the
+    # size and date whatever the order they are returned in
+    for msg in map(
+        lambda x: dict(
+            list(
+                zip(
+                    *[iter(re.sub(
+                        r'([1-9][0-9]*) \((.*)\)', r'ID,\1,\2',
+                        str(
+                            x.replace(b'"', b'')
+                            .replace(b' RFC822.SIZE ', b',SIZE,')
+                            .replace(b' INTERNALDATE ', b',DATE,')
+                            .replace(b'RFC822.SIZE ', b'SIZE,')
+                            .replace(b'INTERNALDATE ', b'DATE,'), 'utf-8')
+                        ).split(','))] * 2
                     )
-                ),
-            msizes
-        ):
-            msg_size = int(msg['SIZE'])
-            msg_date = None
-            try:
-                msg_date = datetime.strptime(
-                    msg['DATE'],
-                    '%d-%b-%Y %H:%M:%S %z'
-                    )
-                list_append(
-                    msg_date,
-                    name="date",
-                    extras={
-                        'ID': int(msg['ID']),
-                        'FOLDER': mbx,
-                        'SIZE': msg_size
-                        })
-            except ValueError as e:
-                # TODO: see hoe to report this better upstream
-                print(f"IMAP message date decoding error: {msg[1]} {e}")
+                )
+            ),
+        msizes
+    ):
+        msg_size = int(msg['SIZE'])
+        msg_date = None
+        try:
+            msg_date = datetime.strptime(
+                msg['DATE'],
+                '%d-%b-%Y %H:%M:%S %z'
+                )
             list_append(
-                msg_size,
-                name="size",
+                msg_date,
+                name="date",
                 extras={
                     'ID': int(msg['ID']),
                     'FOLDER': mbx,
-                    'DATE': msg_date
+                    'SIZE': msg_size
                     })
-            fs += msg_size
+        except ValueError as e:
+            # TODO: see hoe to report this better upstream
+            print(f"IMAP message date decoding error: {msg[1]} {e}")
+        list_append(
+            msg_size,
+            name="size",
+            extras={
+                'ID': int(msg['ID']),
+                'FOLDER': mbx,
+                'DATE': msg_date
+                })
+        fs += msg_size
     return {
         'name': folder_real_name(mbx.strip('"')),
         'messages': int(nb[0]),
