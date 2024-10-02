@@ -101,6 +101,24 @@ def message_subject_from_to(msg):
     return "(None)", "(None)", "(None)"
 
 
+def parse_message_basic_attributes(x:str) -> dict[str, str | int | datetime]:
+    return dict(
+        list(
+            zip(
+                *[iter(re.sub(
+                    r'([1-9][0-9]*) \((.*)\)', r'ID,\1,\2',
+                    str(
+                        x.replace(b'"', b'')
+                        .replace(b' RFC822.SIZE ', b',SIZE,')
+                        .replace(b' INTERNALDATE ', b',DATE,')
+                        .replace(b'RFC822.SIZE ', b'SIZE,')
+                        .replace(b'INTERNALDATE ', b'DATE,'), 'utf-8')
+                    ).split(','))] * 2
+                )
+            )
+    )
+
+
 def folder_size(
     cnx: imaplib.IMAP4_SSL,
     folder_entry: bytes,
@@ -127,7 +145,7 @@ def folder_size(
     unknown_folder_flags = s1.difference(known_folder_flags)
     # TODO: see how to report this better upstream
     if len(unknown_folder_flags) > 0:
-        print(f"{mbx} IMAP folder got unknown flag(s) -> {unknown_folder_flags}")
+        print(f"{mbx} IMAP folder got unknown flag(s) -> {unknown_folder_flags} (folder_size)")
     # Select the desired folder
     result, nb = cnx.select(mbx, readonly=1)
     if result != 'OK':
@@ -159,26 +177,14 @@ def folder_size(
     msgset = f"{m[0]}:{m[-1]}"
     result, msizes = cnx.fetch(msgset, "(INTERNALDATE RFC822.SIZE)")
     if result != 'OK':
-        return {}, Exception(f"IMAP messages sizes returned {result}")
-    # TODO: check that len(msizes) == int(nb[0])
+        return {}, Exception(f"IMAP messages sizes returned {result} (folder_size)")
+    # TODO: see how to report this better upstream
+    if len(msizes) != int(nb[0]):
+        print(f"{mbx} IMAP folder got unknown flag(s) -> {unknown_folder_flags} (folder_size)")
     # TODO: may be find a more clever way to properly compute the
     # size and date whatever the order they are returned in
     for msg in map(
-        lambda x: dict(
-            list(
-                zip(
-                    *[iter(re.sub(
-                        r'([1-9][0-9]*) \((.*)\)', r'ID,\1,\2',
-                        str(
-                            x.replace(b'"', b'')
-                            .replace(b' RFC822.SIZE ', b',SIZE,')
-                            .replace(b' INTERNALDATE ', b',DATE,')
-                            .replace(b'RFC822.SIZE ', b'SIZE,')
-                            .replace(b'INTERNALDATE ', b'DATE,'), 'utf-8')
-                        ).split(','))] * 2
-                    )
-                )
-            ),
+        lambda x: parse_message_basic_attributes(x),
         msizes
     ):
         msg_size = int(msg['SIZE'])
