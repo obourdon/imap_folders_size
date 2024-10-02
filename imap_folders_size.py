@@ -103,6 +103,7 @@ def folder_size(
     cnx: imaplib.IMAP4_SSL,
     folder_entry: bytes,
         ) -> tuple[dict[str, str | int], Exception]:
+    # TODO: prevent usage of globals
     global message_sizes, message_dates, min_max
     fs = 0
     nb = '0'
@@ -129,6 +130,12 @@ def folder_size(
     result, nb = cnx.select(mbx, readonly=1)
     if result != 'OK':
         return {}, Exception(f"{mbx} IMAP folder select returned {result} (folder_size)")
+    # TODO: do some meaningful computation with flags
+    # flags = cnx.response('FLAGS')
+    recents = cnx.response('RECENT')
+    unread_emails = 0
+    if recents:
+        unread_emails = int(recents[1][0])
     # TODO: may be not call search if int(nb[0]) == 0
     # and/or verify that int(nb[0]) == len(msg[0].split())
     # Go through all the messages in the selected folder
@@ -193,6 +200,7 @@ def folder_size(
     return {
         'name': folder_real_name(mbx.strip('"')),
         'messages': int(nb[0]),
+        'unread': unread_emails,
         'size': fs
         }, None
 
@@ -296,6 +304,7 @@ if __name__ == '__main__':
             folder_stats = [
                 folder_infos['name'],
                 folder_infos['messages'],
+                folder_infos['unread'],
                 folder_infos['size']
                 ]
             if quota_used:
@@ -308,7 +317,7 @@ if __name__ == '__main__':
     pdb.set_trace()
     trace_msg('FOLDERS PROCESSED')
     summary = ["Sum", nmessages_total, size_total]
-    hfields = ["Folder", "# Msg", "Size"]
+    hfields = ["Folder", "# Msg", "# Unread", "Size"]
     if quota_used:
         hfields.append("%")
         summary.append(100)
