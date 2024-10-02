@@ -18,6 +18,8 @@ import tabulate
 
 
 # Some regular expressions for IMAP response decoding
+# TODO: better use r"^\([^)]*\) \"([^\"]+)\" \"(.*)\"$")
+# to segment flags, separator, folder_name
 imap_folder_re = re.compile(r"^\([^)]*\) (.*)$")
 imap_quota_re = re.compile(r"^\"[^\"]*\" \(STORAGE (\d+) (\d+)\)$")
 
@@ -132,11 +134,17 @@ def folder_size(
         return {}, Exception(f"{mbx} IMAP folder select returned {result} (folder_size)")
     # TODO: do some meaningful computation with flags
     # flags = cnx.response('FLAGS')
-    recents = cnx.response('RECENT')
+    # RECENT response element does not seem to be supported (anymore?)
+    # recents = cnx.response('RECENT')
     unread_emails = 0
-    if recents:
-        unread_emails = int(recents[1][0])
-    # TODO: may be not call search if int(nb[0]) == 0
+    # No need to further call IMAP server API
+    if int(nb[0]) == 0:
+        return {
+            'name': folder_real_name(mbx.strip('"')),
+            'messages': 0,
+            'unread': 0,
+            'size': 0,
+            }, None
     # and/or verify that int(nb[0]) == len(msg[0].split())
     # Go through all the messages in the selected folder
     typ, msgs = cnx.search(None, 'ALL')
@@ -314,7 +322,6 @@ if __name__ == '__main__':
             imap_folders.append(folder_stats)
             nmessages_total += imap_folders[-1][1]
             size_total += imap_folders[-1][2]
-    pdb.set_trace()
     trace_msg('FOLDERS PROCESSED')
     summary = ["Sum", nmessages_total, size_total]
     hfields = ["Folder", "# Msg", "# Unread", "Size"]
