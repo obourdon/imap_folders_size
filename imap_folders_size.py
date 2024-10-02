@@ -351,6 +351,6 @@ if __name__ == '__main__':
         biggest.append([msg.get("id"), human_readable_size(msg.get("size")), (100.0 * msg.get("size")) / (1024 * quota_used), msg.get("date"), folder_real_name(msg.get("folder").strip('"')), msg_from, msg_subject])
         to_save += msg.get("size")
     print(tabulate.tabulate(biggest, headers=["ID", "Size", "%", "Date", "Folder", "From", "Subject"], floatfmt=".2f"))
-    print(f"\nYou can save {human_readable_size(to_save)} ({((100*to_save)/(1024*quota_used)):.2f}%) by cleaning up the {len(big_messages)} biggest messages\n")
+    print(f"\nYou can save {human_readable_size(to_save)} ({((100*to_save)/(1024*quota_used)):.2f}% of quota, {((100*to_save)/size_total):.2f}% of total messages sizes) by cleaning up the {len(big_messages)} biggest messages ({(100*len(big_messages))/nmessages_total:.2f}% of total messages number)\n")
     # Close the connection
     cnx.logout()

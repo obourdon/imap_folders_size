@@ -8,4 +8,5 @@
 
 - Use OOP for easier reuse and code factorization
 
-- You can save 2.0GB (2.77%) by cleaning up the 301 biggest messages -> % of quotas + % of total + 301 = x% of total # msgs
+- Try to see if subject and from, to retrieval can be done during global phase instead of big messages phase for faster computation
+	and less IMAP API exchanges
