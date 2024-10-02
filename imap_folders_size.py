@@ -334,6 +334,8 @@ if __name__ == '__main__':
     print(tabulate.tabulate(imap_folders, headers=hfields, floatfmt=".2f"))
     if quota_used and quota_total:
         print(f"\nQuotas Used: {human_readable_size(quota_used*1024)} Total: {human_readable_size(quota_total*1024)} Usage: {(100*quota_used)/quota_total:.2f}%")
+        if 'gmail.com' in imap_server:
+            print(f'Email related: Total messages size: {human_readable_size(size_total)} Used%: {(100*size_total)/(1024*quota_used):.2f}% Total%: {(100*size_total)/(1024*quota_total):.2f}%')
     trace_msg('BASIC STATS PRINTED')
     sdata = np.array(list(map(lambda x: x.get("VALUE"), message_sizes)))
     ddata = np.array(list(map(lambda x: x.get("VALUE"), message_dates)))
