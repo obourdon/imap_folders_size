@@ -372,23 +372,51 @@ if __name__ == '__main__':
     imap_folders.append(summary)
     print(tabulate.tabulate(imap_folders, headers=hfields, floatfmt=".2f"))
     if quota_used and quota_total:
-        print(f"\nQuotas Used: {human_readable_size(quota_used*1024)} Total: {human_readable_size(quota_total*1024)} Usage: {(100*quota_used)/quota_total:.2f}%")
+        print(f"\nQuotas Used: {human_readable_size(quota_used*1024)} " +
+              f"Total: {human_readable_size(quota_total*1024)} " +
+              f"Usage: {(100*quota_used)/quota_total:.2f}%")
         if 'gmail.com' in imap_server:
-            print(f'Email related: Total messages size: {human_readable_size(size_total)} Used%: {(100*size_total)/(1024*quota_used):.2f}% Total%: {(100*size_total)/(1024*quota_total):.2f}%')
+            print("Email related: Total messages size: " +
+                  f"{human_readable_size(size_total)} Used%: " +
+                  f"{(100*size_total)/(1024*quota_used):.2f}% " +
+                  f"Total%: {(100*size_total)/(1024*quota_total):.2f}%")
     sdata = np.array(list(map(lambda x: x.get("size"), messages_infos)))
     ddata = np.array(list(map(lambda x: x.get("date"), messages_infos)))
     print(f"\nMessage sizes: [{sdata.min()} - {sdata.max()}]")
     print(f"\nMessage dates: [{ddata.min()} - {ddata.max()}]")
     over95percent = int(sdata.mean() + 2 * sdata.std())
-    print(f"\nMessages over {human_readable_size(over95percent)} (upper 95% quartile):\n")
+    print(f"\nMessages over {human_readable_size(over95percent)} " +
+          "(upper 95% quartile):\n")
     to_save = 0
-    big_messages = sorted(list(filter(lambda x: x.get("size", 0) > over95percent, messages_infos)), key=lambda x: x.get("size"))
+    big_messages = sorted(
+        list(
+            filter(
+                lambda x: x.get("size", 0) > over95percent,
+                messages_infos)
+            ),
+        key=lambda x: x.get("size"))
     biggest = []
     for msg in big_messages:
         msg_from, msg_to, msg_subject = message_subject_from_to(cnx, msg)
-        biggest.append([msg.get("id"), human_readable_size(msg.get("size")), (100.0 * msg.get("size")) / (1024 * quota_used), msg.get("date"), folder_real_name(msg.get("folder").strip('"')), msg_from, msg_subject])
+        biggest.append([
+            msg.get("id"),
+            human_readable_size(msg.get("size")),
+            (100.0 * msg.get("size")) / (1024 * quota_used),
+            msg.get("date"),
+            folder_real_name(
+                msg.get("folder").strip('"')),
+            msg_from,
+            msg_subject])
         to_save += msg.get("size")
-    print(tabulate.tabulate(biggest, headers=["ID", "Size", "%", "Date", "Folder", "From", "Subject"], floatfmt=".2f"))
-    print(f"\nYou can save {human_readable_size(to_save)} ({((100*to_save)/(1024*quota_used)):.2f}% of quota, {((100*to_save)/size_total):.2f}% of total messages sizes) by cleaning up the {len(big_messages)} biggest messages ({(100*len(big_messages))/nmessages_total:.2f}% of total messages number)\n")
+    print(tabulate.tabulate(
+        biggest,
+        headers=["ID", "Size", "%", "Date", "Folder", "From", "Subject"],
+        floatfmt=".2f"))
+    print(f"\nYou can save {human_readable_size(to_save)} " +
+          f"({((100*to_save)/(1024*quota_used)):.2f}% of quota, " +
+          f"{((100*to_save)/size_total):.2f}% of total messages sizes) by " +
+          f"cleaning up the {len(big_messages)} biggest messages " +
+          f"({(100*len(big_messages))/nmessages_total:.2f}% of total " +
+          "messages number)\n")
     # Close the connection
     cnx.logout()
