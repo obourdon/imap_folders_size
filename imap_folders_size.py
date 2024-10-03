@@ -12,9 +12,23 @@ import imaplib
 import numpy as np
 import os
 import re
-from rich.progress import track
+from rich.progress import Progress
 import sys
 import tabulate
+
+
+class FolderProgress:
+    progress: Progress
+    task: int
+
+    def __init__(self, progress: Progress):
+        self.progress = progress
+
+    def set_task(self, task: int):
+        self.task = task
+
+    def update_task(self, **kwargs):
+        self.progress.update(self.task, refresh=True, **kwargs)
 
 
 # Some regular expressions for IMAP response decoding
@@ -140,6 +154,7 @@ def folder_size(
     cnx: imaplib.IMAP4_SSL,
     folder_entry: bytes,
     returned_folder_attributes: dict[str, str | int],
+    progress: FolderProgress = None,
         ) -> Exception | None:
     fs = 0
     nb = '0'
@@ -193,6 +208,13 @@ def folder_size(
             'size': 0,
             })
         return None
+    if progress:
+        progress.update_task(
+            description="[cyan]Scanning %s (%d)..." % (mbx, int(nb[0])),
+            total=int(nb[0]),
+            completed=0,
+            visible=True,
+            )
     # and/or verify that int(nb[0]) == len(msg[0].split())
     # Go through all the messages in the selected folder
     typ, msgs = cnx.search(None, 'ALL')
@@ -228,6 +250,8 @@ def folder_size(
         lambda x: parse_message_basic_attributes(str(x, 'utf-8')),
         msizes
     ):
+        if progress:
+            progress.update_task(advance=1)
         msg_size = int(msg['SIZE'])
         msg_date = None
         try:
@@ -250,6 +274,8 @@ def folder_size(
         if 'Seen' not in msg.get('FLAGS', ''):
             unread_emails += 1
         fs += msg_size
+#    if progress:
+#        progress.update_task(visible=False)
     returned_folder_attributes.update({
         'name': folder_real_name(mbx.strip('"')),
         'messages': int(nb[0]),
@@ -345,38 +371,48 @@ if __name__ == '__main__':
     imap_folders = []
     messages_infos = []
     # Progress bar which will disapear once all folders processed
-    for idx in track(
-        range(len(folders)),
-        description="Processing folders...",
-        transient=True,
-            ):
-        folder_infos = dict()
-        ex = folder_size(cnx, folders[idx], folder_infos)
-        if ex:
-            print(f'{error_or_warning(len(folder_infos) > 0)}: got {ex}')
-        if folder_infos.get('name'):
-            folder_stats = [
-                folder_infos['name'],
-                folder_infos['messages'],
-                folder_infos['unread'],
-                folder_infos['size'],
-                ]
-            if quota_used:
-                folder_stats.append(
-                    (100.0 * folder_infos['size'])
-                    / (1024 * quota_used))
-            imap_folders.append(folder_stats)
-            nmessages_total += folder_infos['messages']
-            size_total += folder_infos['size']
-            nunread_total += folder_infos['unread']
-            messages_infos.extend(folder_infos.get('infos', []))
+    with Progress(transient=True, expand=True) as progress:
+        main_folder_task = progress.add_task(
+            "[yellow]Processing folders...",
+            total=len(folders))
+        sub_progress = FolderProgress(progress)
+        sub_folder_task = progress.add_task(
+            "[cyan]\tScanning XXX...",
+            visible=False,
+            )
+        sub_progress.set_task(sub_folder_task)
+        for folder in folders:
+            progress.update(main_folder_task, advance=1)
+            folder_infos = dict()
+            ex = folder_size(cnx, folder, folder_infos, sub_progress)
+            if ex:
+                print(f'{error_or_warning(len(folder_infos) > 0)}: got {ex}')
+            if folder_infos.get('name'):
+                folder_stats = [
+                    folder_infos['name'],
+                    folder_infos['messages'],
+                    folder_infos['unread'],
+                    folder_infos['size'],
+                    ]
+                if quota_used:
+                    folder_stats.append(
+                        (100.0 * folder_infos['size'])
+                        / (1024 * quota_used))
+                imap_folders.append(folder_stats)
+                nmessages_total += folder_infos['messages']
+                size_total += folder_infos['size']
+                nunread_total += folder_infos['unread']
+                messages_infos.extend(folder_infos.get('infos', []))
     summary = ["Sum", nmessages_total, nunread_total, size_total]
     hfields = ["Folder", "# Msg", "# Unread", "Size"]
     if quota_used:
         hfields.append("%")
         summary.append(100)
     imap_folders.append(summary)
-    print(tabulate.tabulate(imap_folders, headers=hfields, floatfmt=".2f"))
+    print(
+        "\n",
+        tabulate.tabulate(imap_folders, headers=hfields, floatfmt=".2f")
+        )
     if quota_used and quota_total:
         print(f"\nQuotas Used: {human_readable_size(quota_used*1024)} " +
               f"Total: {human_readable_size(quota_total*1024)} " +
@@ -402,18 +438,23 @@ if __name__ == '__main__':
             ),
         key=lambda x: x.get("size"))
     biggest = []
-    for msg in big_messages:
-        msg_from, msg_to, msg_subject = message_subject_from_to(cnx, msg)
-        biggest.append([
-            msg.get("id"),
-            human_readable_size(msg.get("size")),
-            (100.0 * msg.get("size")) / (1024 * quota_used),
-            msg.get("date"),
-            folder_real_name(
-                msg.get("folder").strip('"')),
-            msg_from,
-            msg_subject])
-        to_save += msg.get("size")
+    with Progress(transient=True, expand=True) as progress:
+        main_folder_task = progress.add_task(
+            "[yellow]Processing biggest messages...",
+            total=len(big_messages))
+        for msg in big_messages:
+            progress.update(main_folder_task, advance=1)
+            msg_from, msg_to, msg_subject = message_subject_from_to(cnx, msg)
+            biggest.append([
+                msg.get("id"),
+                human_readable_size(msg.get("size")),
+                (100.0 * msg.get("size")) / (1024 * quota_used),
+                msg.get("date"),
+                folder_real_name(
+                    msg.get("folder").strip('"')),
+                msg_from,
+                msg_subject])
+            to_save += msg.get("size")
     print(tabulate.tabulate(
         biggest,
         headers=["ID", "Size", "%", "Date", "Folder", "From", "Subject"],
