@@ -12,6 +12,7 @@ import imaplib
 import numpy as np
 import os
 import re
+from rich.progress import track
 import sys
 import tabulate
 
@@ -343,9 +344,14 @@ if __name__ == '__main__':
 
     imap_folders = []
     messages_infos = []
-    for folder in folders:
+    # Progress bar which will disapear once all folders processed
+    for idx in track(
+        range(len(folders)),
+        description="Processing folders...",
+        transient=True,
+            ):
         folder_infos = dict()
-        ex = folder_size(cnx, folder, folder_infos)
+        ex = folder_size(cnx, folders[idx], folder_infos)
         if ex:
             print(f'{error_or_warning(len(folder_infos) > 0)}: got {ex}')
         if folder_infos.get('name'):
