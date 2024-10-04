@@ -4,6 +4,7 @@
 # LOGPASSWD=xxxxx
 # IMAP_SERVER=yyyy (default to imap.gmail.com)
 
+import csv
 from datetime import datetime
 import email
 import getpass
@@ -180,6 +181,7 @@ def folder_size(
     special_folder = s1.intersection(special_folder_flags)
     # Folder name only
     mbx = '"' + ' '.join(map(lambda x: x.strip('"'), folder_items[1:])) + '"'
+    rmbx = folder_real_name(mbx.strip('"'))
     # Folder is not selectable or is tagged with special meaning
     if len(special_folder) > 0:
         return Exception(f"{mbx} IMAP folder not processed {special_folder} " +
@@ -202,7 +204,7 @@ def folder_size(
     # No need to further call IMAP server API
     if int(nb[0]) == 0:
         returned_folder_attributes.update({
-            'name': folder_real_name(mbx.strip('"')),
+            'name': rmbx,
             'messages': 0,
             'unread': 0,
             'size': 0,
@@ -210,7 +212,7 @@ def folder_size(
         return None
     if progress:
         progress.update_task(
-            description="[cyan]Scanning %s (%d)..." % (mbx, int(nb[0])),
+            description="[cyan]Scanning %s (%d)..." % (rmbx, int(nb[0])),
             total=int(nb[0]),
             completed=0,
             visible=True,
@@ -277,7 +279,7 @@ def folder_size(
 #    if progress:
 #        progress.update_task(visible=False)
     returned_folder_attributes.update({
-        'name': folder_real_name(mbx.strip('"')),
+        'name': rmbx,
         'messages': int(nb[0]),
         'unread': unread_emails,
         'size': fs,
@@ -406,13 +408,35 @@ if __name__ == '__main__':
     summary = ["Sum", nmessages_total, nunread_total, size_total]
     hfields = ["Folder", "# Msg", "# Unread", "Size"]
     if quota_used:
-        hfields.append("%")
+        hfields.append("Quota%")
         summary.append(100)
     imap_folders.append(summary)
     print(
         "\n",
         tabulate.tabulate(imap_folders, headers=hfields, floatfmt=".2f")
         )
+    # Data to be exported to CSV is header + all but last
+    # summmary row
+    data = [hfields]
+    data.extend(imap_folders[:-1])
+    file_desc = datetime.now().strftime("%Y-%m-%d-%H-%M")
+    with open(
+            f'folders-{file_desc}.csv',
+            "w",
+            encoding='utf-8'
+            ) as f:
+        writer = csv.writer(f)
+        writer.writerows(data)
+    with open(
+            f'messages-{file_desc}.csv',
+            "w",
+            encoding='utf-8'
+            ) as f:
+        writer = csv.writer(f, delimiter='|')
+        # Header
+        writer.writerow(list(messages_infos[0].keys()))
+        for msg in messages_infos:
+            writer.writerow(msg.values())
     if quota_used and quota_total:
         print(f"\nQuotas Used: {human_readable_size(quota_used*1024)} " +
               f"Total: {human_readable_size(quota_total*1024)} " +
@@ -455,10 +479,21 @@ if __name__ == '__main__':
                 msg_from,
                 msg_subject])
             to_save += msg.get("size")
+    hfields = ["ID", "Size", "%", "Date", "Folder", "From", "Subject"]
     print(tabulate.tabulate(
         biggest,
-        headers=["ID", "Size", "%", "Date", "Folder", "From", "Subject"],
+        headers=hfields,
         floatfmt=".2f"))
+    with open(
+            f'biggest-messages-{file_desc}.csv',
+            "w",
+            encoding='utf-8'
+            ) as f:
+        writer = csv.writer(f, delimiter='|')
+        # Header
+        writer.writerow(hfields)
+        for msg in biggest:
+            writer.writerow(biggest)
     print(f"\nYou can save {human_readable_size(to_save)} " +
           f"({((100*to_save)/(1024*quota_used)):.2f}% of quota, " +
           f"{((100*to_save)/size_total):.2f}% of total messages sizes) by " +
