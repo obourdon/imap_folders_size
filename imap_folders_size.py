@@ -495,6 +495,8 @@ if __name__ == '__main__':
         biggest,
         headers=hfields,
         floatfmt=".2f"))
+    data = [hfields]
+    data.extend(biggest)
     with open(
             f'biggest-messages-{file_desc}.csv',
             "w",
@@ -502,9 +504,7 @@ if __name__ == '__main__':
             ) as f:
         writer = csv.writer(f, delimiter='|')
         # Header
-        writer.writerow(hfields)
-        for msg in biggest:
-            writer.writerow(biggest)
+        writer.writerows(data)
     print(f"\nYou can save {human_readable_size(to_save)} " +
           f"({((100*to_save)/(1024*quota_used)):.2f}% of quota, " +
           f"{((100*to_save)/size_total):.2f}% of total messages sizes) by " +
