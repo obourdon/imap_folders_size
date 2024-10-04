@@ -350,6 +350,17 @@ def error_or_warning(cond: bool) -> str:
     return "WARNING"
 
 
+# Convert message entry for proper CSV output
+def convert_message_entry(*args) -> list[int | str]:
+    return [
+        [*args][0][0],                                # ID
+        [*args][0][1],                                # SIZE
+        [*args][0][2],                                # DATE
+        ' '.join([*args][0][3]),                      # FLAGS
+        folder_real_name([*args][0][4].strip('"'))    # MAILBOX FOLDER
+    ]
+
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     try:
@@ -436,7 +447,7 @@ if __name__ == '__main__':
         # Header
         writer.writerow(list(messages_infos[0].keys()))
         for msg in messages_infos:
-            writer.writerow(msg.values())
+            writer.writerow(convert_message_entry(list(msg.values())))
     if quota_used and quota_total:
         print(f"\nQuotas Used: {human_readable_size(quota_used*1024)} " +
               f"Total: {human_readable_size(quota_total*1024)} " +
