@@ -63,7 +63,7 @@ known_folder_flags.update(special_folder_flags)
 
 # Other globalss
 imap_server = os.getenv("IMAP_SERVER") or "imap.gmail.com"
-
+detailed_infos = os.getenv("IMAP_DETAILS")
 
 def trace_msg(msg):
     if os.getenv("NO_TRACE"):
@@ -138,17 +138,45 @@ def message_subject_from_to(
     return "(None)", "(None)", "(None)"
 
 
-def parse_message_basic_attributes(imap_email_infos: str) -> dict[str, str]:
+def parse_message_basic_attributes(in_imap_email_infos: str | tuple[str]) -> dict[str, str]:
+    imap_email_infos = None
+    if type(in_imap_email_infos) is tuple:
+        # Here the first tuple element potentially missing the closing parenthesis
+        # because it is retrieved as a separate single element
+        imap_email_infos = str(in_imap_email_infos[0] + b')', 'utf-8')
+    else:
+        if in_imap_email_infos == b')':
+            return {}
+        imap_email_infos = str(in_imap_email_infos, 'utf-8')
     m_attrs = imap_message_attributes['ID'].match(imap_email_infos)
     # TODO: set how to report this upstream
     if not m_attrs:
         print(f"Error parsing {imap_email_infos} " +
               "(parse_message_basic_attributes)")
+        return {}
     ret = {'ID': m_attrs[1]}
     for attr in ['FLAGS', 'SIZE', 'DATE']:
         c_attr = imap_message_attributes[attr].match(m_attrs[2])
         if c_attr:
             ret[attr] = c_attr[1]
+    if type(in_imap_email_infos) is tuple:
+        # The second tuple element contains the email message headers
+        # as a bytes sequence. First remove the trailing double
+        # \r\n then for all continuation lines \r\n\s+ treat as single
+        # space without going to the next list. Once done, splitting on
+        # \r\n gives the lis of headers strings
+        imap_email_headers = re.sub(
+            r'\r\n ',
+            ' ',
+            re.sub(
+                r'\r\n\r\n$',
+                '',
+                str(
+                    in_imap_email_infos[1],
+                    'utf-8',
+                )
+            )
+        ).split('\r\n')
     return ret
 
 
@@ -234,8 +262,11 @@ def folder_size(
     msgset = f"{m[0]}:{m[-1]}"
     # Add FLAGS to previously returned messages attributes
     # Same as FAST. See https://www.rfc-editor.org/rfc/rfc3501#section-6.4.5
-    # result, msizes = cnx.fetch(msgset, "(FLAGS INTERNALDATE RFC822.SIZE)")
-    result, msizes = cnx.fetch(msgset, "FAST")
+    # DO NOT USE RFC822.HEADER which is untagged + INTERNALDATE not returned either
+    if detailed_infos:
+        result, msizes = cnx.fetch(msgset, "(FLAGS INTERNALDATE RFC822.SIZE BODY.PEEK[HEADER])")
+    else:
+        result, msizes = cnx.fetch(msgset, "FAST")
     # TODO: potentially add further email message details
     # result, msizes = cnx.fetch(msgset, "(FLAGS INTERNALDATE RFC822.SIZE
     # BODY.PEEK[HEADER.FIELDS (
@@ -244,17 +275,20 @@ def folder_size(
     if result != 'OK':
         return Exception(f"IMAP messages sizes returned {result} " +
                          "(folder_size)")
+    msizes = list(filter(lambda x: x != b')', msizes))
     # TODO: see how to report this better upstream
     if len(msizes) != int(nb[0]):
-        print(f"{mbx} IMAP folder got unknown flag(s) -> " +
-              f"{unknown_folder_flags} (folder_size)")
+        print(f"{mbx} IMAP folder got weird sizes -> " +
+              f"{len(msizes)} != {int(nb[0])} (folder_size)")
     messages_infos = []
     for msg in map(
-        lambda x: parse_message_basic_attributes(str(x, 'utf-8')),
+        parse_message_basic_attributes,
         msizes
     ):
         if progress:
             progress.update_task(advance=1)
+        if len(msg) == 0:
+            continue
         msg_size = int(msg['SIZE'])
         msg_date = None
         try:
