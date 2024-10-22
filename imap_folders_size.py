@@ -4,6 +4,7 @@
 # LOGPASSWD=xxxxx
 # IMAP_SERVER=yyyy (default to imap.gmail.com)
 
+import contextlib
 import csv
 from datetime import datetime
 import email
@@ -361,6 +362,12 @@ def convert_message_entry(*args) -> list[int | str]:
     ]
 
 
+def get_progress_context() -> Progress | contextlib.nullcontext:
+    if os.getenv("NO_PROGRESS"):
+        return contextlib.nullcontext()
+    return Progress(transient=True, expand=True)
+
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     try:
@@ -383,19 +390,22 @@ if __name__ == '__main__':
 
     imap_folders = []
     messages_infos = []
+    sub_progress = None
     # Progress bar which will disapear once all folders processed
-    with Progress(transient=True, expand=True) as progress:
-        main_folder_task = progress.add_task(
-            "[yellow]Processing folders...",
-            total=len(folders))
-        sub_progress = FolderProgress(progress)
-        sub_folder_task = progress.add_task(
-            "[cyan]\tScanning XXX...",
-            visible=False,
+    with get_progress_context() as progress:
+        if progress:
+            main_folder_task = progress.add_task(
+                "[yellow]Processing folders...",
+                total=len(folders))
+            sub_progress = FolderProgress(progress)
+            sub_folder_task = progress.add_task(
+                "[cyan]\tScanning XXX...",
+                visible=False,
             )
-        sub_progress.set_task(sub_folder_task)
+            sub_progress.set_task(sub_folder_task)
         for folder in folders:
-            progress.update(main_folder_task, advance=1)
+            if progress:
+                progress.update(main_folder_task, advance=1)
             folder_infos = dict()
             ex = folder_size(cnx, folder, folder_infos, sub_progress)
             if ex:
@@ -473,12 +483,14 @@ if __name__ == '__main__':
             ),
         key=lambda x: x.get("size"))
     biggest = []
-    with Progress(transient=True, expand=True) as progress:
-        main_folder_task = progress.add_task(
-            "[yellow]Processing biggest messages...",
-            total=len(big_messages))
+    with get_progress_context() as progress:
+        if progress:
+            main_folder_task = progress.add_task(
+                "[yellow]Processing biggest messages...",
+                total=len(big_messages))
         for msg in big_messages:
-            progress.update(main_folder_task, advance=1)
+            if progress:
+                progress.update(main_folder_task, advance=1)
             msg_from, msg_to, msg_subject = message_subject_from_to(cnx, msg)
             biggest.append([
                 msg.get("id"),

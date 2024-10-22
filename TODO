@@ -10,3 +10,5 @@
 
 - Try to see if subject and from, to retrieval can be done during global phase instead of big messages phase for faster computation
 	and less IMAP API exchanges
+
+- Change progress to match 3 potential modes: rich, text, none
