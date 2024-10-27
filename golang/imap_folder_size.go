@@ -1,8 +1,13 @@
 package main
 
 import (
+       "bufio"
        "fmt"
+       "os"
        "regexp"
+       "strings"
+       "syscall"
+       "golang.org/x/term"
 
        "github.com/spf13/viper"
        flag "github.com/spf13/pflag"
@@ -61,6 +66,25 @@ func initialize_globals() {
      imap_message_attributes["FLAGS"] = regexp.MustCompile(".*FLAGS \\(([^\\)]+)\\).*")
 }
 
+func credentials() (string, string, error) {
+    reader := bufio.NewReader(os.Stdin)
+
+    fmt.Print("Enter Username: ")
+    username, err := reader.ReadString('\n')
+    if err != nil {
+        return "", "", err
+    }
+
+    fmt.Print("Enter Password: ")
+    bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+    if err != nil {
+        return "", "", err
+    }
+
+    password := string(bytePassword)
+    return strings.TrimSpace(username), strings.TrimSpace(password), nil
+}
+
 func main() {
      initialize_env_and_cmd_line_config()
      // Initialize global vars
@@ -76,4 +100,7 @@ func main() {
      initialize_globals()
      fmt.Printf("Special folders: %+v\n", special_folder_flags)
      fmt.Printf("Known folders: %+v\n", known_folder_flags)
+
+     usr, passwd, _ := credentials()
+     fmt.Printf("Username: %s, Password: %s\n", usr, passwd)
 }
