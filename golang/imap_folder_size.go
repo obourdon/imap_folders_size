@@ -35,9 +35,9 @@ func initialize_env_and_cmd_line_config() {
      viper.SetDefault("no_trace", false)
 
      // Command line arguments parsing
-     flag.String("server", "tooto", "help message for server")
-     flag.Bool("details", false, "help message for details")
-     flag.Bool("no_trace", false, "help message for no_trace")
+     flag.String("server", "imap.gmail.com", "the IMAP server DNS name or IP address")
+     flag.Bool("details", false, "get IMAP messages details (default to false)")
+     flag.Bool("no_trace", false, "disable deep tracing (default to false)")
      flag.Parse()
      viper.BindPFlags(flag.CommandLine)
 }
