@@ -3,8 +3,9 @@ module github.com/obourdon/golang_imap_folder_size
 go 1.22.8
 
 require (
-	github.com/spf13/viper v1.19.0
+	github.com/deckarep/golang-set/v2 v2.6.0
 	github.com/spf13/pflag v1.0.5
+	github.com/spf13/viper v1.19.0
 )
 
 require (
