@@ -20,7 +20,7 @@ var imap_folder_re *regexp.Regexp
 var imap_quota_re  *regexp.Regexp
 var imap_message_attributes = make(map[string]*regexp.Regexp, 4)
 
-func main() {
+func initialize_env_and_cmd_line_config() {
      // Environment parsing
      viper.AutomaticEnv() // read value ENV variable
      // Set default value
@@ -35,17 +35,9 @@ func main() {
      flag.Bool("no_trace", false, "help message for no_trace")
      flag.Parse()
      viper.BindPFlags(flag.CommandLine)
+}
 
-     // Declare vars
-     imap_server = viper.GetString("server")
-     imap_details = viper.GetBool("details")
-     no_trace = viper.GetBool("no_trace")
-
-     fmt.Println("---------- Example ----------")
-     fmt.Printf("server (%T): %s\n", imap_server, imap_server)
-     fmt.Printf("details (%T): %#v\n", imap_details, imap_details)
-     fmt.Printf("no_trace (%T): %#v\n", no_trace, no_trace)
-
+func initialize_globals() {
      // Initialize IMAP folders flags
      special_folder_flags.Add("Noselect")
      special_folder_flags.Add("All")
@@ -59,13 +51,29 @@ func main() {
      known_folder_flags.Add("Trash")
      known_folder_flags.Add("Flagged")
      known_folder_flags = known_folder_flags.Union(special_folder_flags)
-     fmt.Printf("Special folders: %+v\n", special_folder_flags)
-     fmt.Printf("Known folders: %+v\n", known_folder_flags)
 
+     // Regular expressions
      imap_folder_re = regexp.MustCompile("^\\([^\\)]*\\) (.*)$")
      imap_quota_re = regexp.MustCompile("^\\\"[^\\\"]*\\\" \\(STORAGE (\\d+) (\\d+)\\)$")
      imap_message_attributes["ID"] = regexp.MustCompile("^(\\d+) \\((.*)\\)$")
      imap_message_attributes["SIZE"] = regexp.MustCompile(".*RFC822.SIZE (\\d+).*")
      imap_message_attributes["DATE"] = regexp.MustCompile(".*INTERNALDATE \\\"([^\\\"]+)\\\".*")
      imap_message_attributes["FLAGS"] = regexp.MustCompile(".*FLAGS \\(([^\\)]+)\\).*")
+}
+
+func main() {
+     initialize_env_and_cmd_line_config()
+     // Initialize global vars
+     imap_server = viper.GetString("server")
+     imap_details = viper.GetBool("details")
+     no_trace = viper.GetBool("no_trace")
+
+     fmt.Println("---------- Example ----------")
+     fmt.Printf("server (%T): %s\n", imap_server, imap_server)
+     fmt.Printf("details (%T): %#v\n", imap_details, imap_details)
+     fmt.Printf("no_trace (%T): %#v\n", no_trace, no_trace)
+
+     initialize_globals()
+     fmt.Printf("Special folders: %+v\n", special_folder_flags)
+     fmt.Printf("Known folders: %+v\n", known_folder_flags)
 }
