@@ -2,18 +2,23 @@ package main
 
 import (
        "fmt"
+       "regexp"
 
        "github.com/spf13/viper"
        flag "github.com/spf13/pflag"
        mapset "github.com/deckarep/golang-set/v2"
 )
 
-var imap_server string
+var imap_server  string
 var imap_details bool
-var no_trace bool
+var no_trace     bool
 
 var special_folder_flags = mapset.NewSet[string]()
-var known_folder_flags = mapset.NewSet[string]()
+var known_folder_flags   = mapset.NewSet[string]()
+
+var imap_folder_re *regexp.Regexp
+var imap_quota_re  *regexp.Regexp
+var imap_message_attributes = make(map[string]*regexp.Regexp, 4)
 
 func main() {
      // Environment parsing
@@ -56,4 +61,11 @@ func main() {
      known_folder_flags = known_folder_flags.Union(special_folder_flags)
      fmt.Printf("Special folders: %+v\n", special_folder_flags)
      fmt.Printf("Known folders: %+v\n", known_folder_flags)
+
+     imap_folder_re = regexp.MustCompile("^\\([^\\)]*\\) (.*)$")
+     imap_quota_re = regexp.MustCompile("^\\\"[^\\\"]*\\\" \\(STORAGE (\\d+) (\\d+)\\)$")
+     imap_message_attributes["ID"] = regexp.MustCompile("^(\\d+) \\((.*)\\)$")
+     imap_message_attributes["SIZE"] = regexp.MustCompile(".*RFC822.SIZE (\\d+).*")
+     imap_message_attributes["DATE"] = regexp.MustCompile(".*INTERNALDATE \\\"([^\\\"]+)\\\".*")
+     imap_message_attributes["FLAGS"] = regexp.MustCompile(".*FLAGS \\(([^\\)]+)\\).*")
 }
