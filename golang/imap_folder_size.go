@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/BrianLeishman/go-imap"
 	mapset "github.com/deckarep/golang-set/v2"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -35,6 +36,7 @@ func initialize_env_and_cmd_line_config() {
 	viper.SetDefault("no_trace", false)
 	viper.SetDefault("user", "")
 	viper.SetDefault("password", "")
+	viper.SetDefault("debug", false)
 
 	// Command line arguments parsing
 	flag.String("server", "imap.gmail.com", "the IMAP server DNS name or IP address")
@@ -42,6 +44,7 @@ func initialize_env_and_cmd_line_config() {
 	flag.Bool("no_trace", false, "disable deep tracing (default to false)")
 	flag.String("user", "", "the IMAP user name/login")
 	flag.String("password", "", "the IMAP user password")
+	flag.Bool("debug", false, "enable IMAP debugging (default to false)")
 	flag.Parse()
 	viper.BindPFlags(flag.CommandLine)
 }
@@ -113,4 +116,14 @@ func main() {
 
 	usr, passwd, _ := credentials(viper.GetString("user"), viper.GetString("password"))
 	fmt.Printf("Username: %s, Password: %s\n", usr, passwd)
+
+	imap.Verbose = viper.GetBool("debug")
+	// Defaults to 10 => here we ask to never retry
+	imap.RetryCount = 0
+	im, err := imap.New(usr, passwd, imap_server, 993)
+	if err != nil {
+	   fmt.Printf("Error connecting to IMAP server %+v", err)
+	   os.Exit(1)
+	}
+	defer im.Close()
 }
