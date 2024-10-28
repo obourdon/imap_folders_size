@@ -364,7 +364,7 @@ def get_quotas(
                 raise Exception('Unable to parse IMAP server quotas')
             return int(quota_infos.group(1)), int(quota_infos.group(2))
     except imaplib.IMAP4.error as e:
-        raise Exception(f"IMAP Quotas erro: {e}")
+        raise Exception(f"IMAP Quotas error: {e}")
     except Exception as e:
         raise Exception(f"IMAP Quotas error. Unknown exception: {e}")
 
