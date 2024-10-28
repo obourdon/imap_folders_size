@@ -139,6 +139,21 @@ func get_quotas(im *imap.Dialer) (used int, total int, err error) {
 	return
 }
 
+func get_folders(im *imap.Dialer) (ret []string, err error) {
+	// Retrieve folders list from IMAP server
+	ret, err = im.GetFolders()
+	if err != nil {
+		fmt.Printf("Error getting folders list from IMAP server %+v", err)
+		return
+	}
+	return
+}
+
+func folder_infos(im *imap.Dialer, folder string) (ret []string, err error) {
+	fmt.Printf("Parsing folder %s\n", folder)
+	return
+}
+
 func main() {
 	initialize_env_and_cmd_line_config()
 	// Initialize global vars
@@ -165,4 +180,15 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("quotas_used %d, quotas_total %d\n", quotas_used, quotas_total)
+	folders, err := get_folders(im)
+	if err != nil {
+		fmt.Printf("Error fetching folders list from IMAP server %+v\n", err)
+		os.Exit(1)
+	}
+	for _, folder := range folders {
+		_, err := folder_infos(im, folder)
+		if err != nil {
+			fmt.Printf("Error getting folder details on %s\n", folder)
+		}
+	}
 }
