@@ -18,6 +18,19 @@ import (
 	"github.com/spf13/viper"
 )
 
+type folder_name_and_flags struct {
+	name  string
+	flags []string
+}
+
+type folder_stats struct {
+	name     string
+	messages int
+	unread   int
+	size     int
+	quota    float32
+}
+
 var imap_server string
 var imap_details bool
 var no_trace bool
@@ -25,7 +38,7 @@ var no_trace bool
 var special_folder_flags = mapset.NewSet[string]()
 var known_folder_flags = mapset.NewSet[string]()
 
-var imap_folder_re *regexp.Regexp
+var imap_folder_list_re *regexp.Regexp
 var imap_quota_re *regexp.Regexp
 var imap_message_attributes = make(map[string]*regexp.Regexp, 4)
 
@@ -54,21 +67,21 @@ func initialize_env_and_cmd_line_config() {
 
 func initialize_globals() {
 	// Initialize IMAP folders flags
-	special_folder_flags.Add("Noselect")
-	special_folder_flags.Add("All")
-	special_folder_flags.Add("Important")
+	special_folder_flags.Add("\\Noselect")
+	special_folder_flags.Add("\\All")
+	special_folder_flags.Add("\\Important")
 
-	known_folder_flags.Add("HasNoChildren")
-	known_folder_flags.Add("HasChildren")
-	known_folder_flags.Add("Drafts")
-	known_folder_flags.Add("Sent")
-	known_folder_flags.Add("Junk")
-	known_folder_flags.Add("Trash")
-	known_folder_flags.Add("Flagged")
+	known_folder_flags.Add("\\HasNoChildren")
+	known_folder_flags.Add("\\HasChildren")
+	known_folder_flags.Add("\\Drafts")
+	known_folder_flags.Add("\\Sent")
+	known_folder_flags.Add("\\Junk")
+	known_folder_flags.Add("\\Trash")
+	known_folder_flags.Add("\\Flagged")
 	known_folder_flags = known_folder_flags.Union(special_folder_flags)
 
 	// Regular expressions
-	imap_folder_re = regexp.MustCompile("^\\([^\\)]*\\) (.*)$")
+	imap_folder_list_re = regexp.MustCompile("^* LIST \\(([^\\)]*)\\) \\\"([^\\s]+)\\\" \\\"(.*)\\\"$")
 	imap_quota_re = regexp.MustCompile("^* QUOTA [^\\(]+ \\(STORAGE (\\d+) (\\d+)\\)$")
 	imap_message_attributes["ID"] = regexp.MustCompile("^(\\d+) \\((.*)\\)$")
 	imap_message_attributes["SIZE"] = regexp.MustCompile(".*RFC822.SIZE (\\d+).*")
@@ -139,9 +152,29 @@ func get_quotas(im *imap.Dialer) (used int, total int, err error) {
 	return
 }
 
-func get_folders(im *imap.Dialer) (ret []string, err error) {
+func get_folders(im *imap.Dialer) (folders []folder_name_and_flags, err error) {
 	// Retrieve folders list from IMAP server
-	ret, err = im.GetFolders()
+	// using on the fly parsing function
+	folders = make([]folder_name_and_flags, 0)
+	_, err = im.Exec(`LIST "" "*"`, false, 0, func(line []byte) (err error) {
+		l := strings.Trim(string(line), "\r\n")
+		mapped := imap_folder_list_re.FindStringSubmatch(l)
+		if len(mapped) != 4 {
+			fmt.Printf("Error decoding IMAP LIST line (%s) got %d items\n", l, len(mapped))
+			return errors.New("Error decoding IMAP LIST line")
+		}
+		folders = append(
+			folders,
+			folder_name_and_flags{
+				name:  mapped[3],
+				flags: strings.Split(mapped[1], " "),
+			})
+		return
+	})
+	// Getting all and parse after
+	// all_folders, err := im.Exec(`LIST "" "*"`, true, 0, nil)
+	// all_folders_lines := strings.Split(all_folders, "\r\n")
+	// fmt.Printf("GOT %d\n", len(all_folders_lines))
 	if err != nil {
 		fmt.Printf("Error getting folders list from IMAP server %+v", err)
 		return
@@ -149,8 +182,21 @@ func get_folders(im *imap.Dialer) (ret []string, err error) {
 	return
 }
 
-func folder_infos(im *imap.Dialer, folder string) (ret []string, err error) {
-	fmt.Printf("Parsing folder %s\n", folder)
+func folder_infos(im *imap.Dialer, folder folder_name_and_flags) (ret folder_stats, err error) {
+	lflags := mapset.NewSet[string]()
+	for _, f := range folder.flags {
+		lflags.Add(f)
+	}
+	special_folder := lflags.Intersect(special_folder_flags)
+	if special_folder.Cardinality() != 0 {
+		fmt.Printf("IMAP folder %s not processed [%+v]\n", folder.name, special_folder)
+		return
+	}
+	fmt.Printf(
+		"Parsing folder %s -> %+v\n",
+		folder.name,
+		folder.flags,
+	)
 	return
 }
 
