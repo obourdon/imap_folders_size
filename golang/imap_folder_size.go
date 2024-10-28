@@ -192,6 +192,10 @@ func folder_infos(im *imap.Dialer, folder folder_name_and_flags) (ret folder_sta
 		fmt.Printf("IMAP folder %s not processed [%+v]\n", folder.name, special_folder)
 		return
 	}
+	unknown_folder_flags := lflags.Difference(known_folder_flags)
+	if unknown_folder_flags.Cardinality() != 0 {
+		fmt.Printf("IMAP folder %s got unknown flag(s) [%+v]\n", folder.name, unknown_folder_flags)
+	}
 	fmt.Printf(
 		"Parsing folder %s -> %+v\n",
 		folder.name,
