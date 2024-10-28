@@ -2,12 +2,15 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
-	"golang.org/x/term"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
+
+	"golang.org/x/term"
 
 	"github.com/BrianLeishman/go-imap"
 	mapset "github.com/deckarep/golang-set/v2"
@@ -66,7 +69,7 @@ func initialize_globals() {
 
 	// Regular expressions
 	imap_folder_re = regexp.MustCompile("^\\([^\\)]*\\) (.*)$")
-	imap_quota_re = regexp.MustCompile("^\\\"[^\\\"]*\\\" \\(STORAGE (\\d+) (\\d+)\\)$")
+	imap_quota_re = regexp.MustCompile("^* QUOTA [^\\(]+ \\(STORAGE (\\d+) (\\d+)\\)$")
 	imap_message_attributes["ID"] = regexp.MustCompile("^(\\d+) \\((.*)\\)$")
 	imap_message_attributes["SIZE"] = regexp.MustCompile(".*RFC822.SIZE (\\d+).*")
 	imap_message_attributes["DATE"] = regexp.MustCompile(".*INTERNALDATE \\\"([^\\\"]+)\\\".*")
@@ -98,6 +101,44 @@ func credentials(user string, passwd string) (string, string, error) {
 	return strings.TrimSpace(username), strings.TrimSpace(password), nil
 }
 
+func get_quotas(im *imap.Dialer) (used int, total int, err error) {
+	used = -1
+	total = -1
+	// Retrieve IMAP server capabilities
+	rsp, err := im.Exec("CAPABILITY", true, 0, nil)
+	if err != nil {
+		fmt.Printf("Error fetching capabilities from IMAP server %+v", err)
+		return
+	}
+	if !strings.Contains(rsp, " QUOTA ") {
+		fmt.Printf("IMAP server does not support QUOTA capability\n")
+		return 0, 0, errors.New("IMAP server does not support QUOTA capability")
+	}
+	// Retrieve IMAP server quotas
+	rsp, err = im.Exec("GETQUOTAROOT INBOX", true, 0, nil)
+	if err != nil {
+		fmt.Printf("Error fetching quotas from IMAP server %+v", err)
+		return
+	}
+	second_line := strings.Split(rsp, "\r\n")[1]
+	mapped := imap_quota_re.FindStringSubmatch(second_line)
+	if len(mapped) != 3 {
+		fmt.Printf("IMAP server GETQUOTAROOT returned improperly formatted response (%s -> %d)\n", second_line, len(mapped))
+		return 0, 0, errors.New("IMAP server GETQUOTAROOT returned improperly formatted response")
+	}
+	used, err = strconv.Atoi(mapped[1])
+	if err != nil {
+		fmt.Printf("IMAP server GETQUOTAROOT unable to convert used quota %s to integer (%+v)\n", mapped[1], err)
+		return
+	}
+	total, err = strconv.Atoi(mapped[2])
+	if err != nil {
+		fmt.Printf("IMAP server GETQUOTAROOT unable to convert total quota %s to integer (%+v)\n", mapped[1], err)
+		return
+	}
+	return
+}
+
 func main() {
 	initialize_env_and_cmd_line_config()
 	// Initialize global vars
@@ -105,25 +146,23 @@ func main() {
 	imap_details = viper.GetBool("details")
 	no_trace = viper.GetBool("no_trace")
 
-	fmt.Println("---------- Example ----------")
-	fmt.Printf("server (%T): %s\n", imap_server, imap_server)
-	fmt.Printf("details (%T): %#v\n", imap_details, imap_details)
-	fmt.Printf("no_trace (%T): %#v\n", no_trace, no_trace)
-
 	initialize_globals()
-	fmt.Printf("Special folders: %+v\n", special_folder_flags)
-	fmt.Printf("Known folders: %+v\n", known_folder_flags)
 
 	usr, passwd, _ := credentials(viper.GetString("user"), viper.GetString("password"))
-	fmt.Printf("Username: %s, Password: %s\n", usr, passwd)
 
 	imap.Verbose = viper.GetBool("debug")
 	// Defaults to 10 => here we ask to never retry
 	imap.RetryCount = 0
 	im, err := imap.New(usr, passwd, imap_server, 993)
 	if err != nil {
-	   fmt.Printf("Error connecting to IMAP server %+v", err)
-	   os.Exit(1)
+		fmt.Printf("Error connecting to IMAP server %+v", err)
+		os.Exit(1)
 	}
 	defer im.Close()
+	quotas_used, quotas_total, err := get_quotas(im)
+	if err != nil {
+		fmt.Printf("Error fetching quotas from IMAP server %+v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("quotas_used %d, quotas_total %d\n", quotas_used, quotas_total)
 }
