@@ -161,12 +161,18 @@ func get_folders(im *imap.Dialer) (folders []folder_name_and_flags, err error) {
 		mapped := imap_folder_list_re.FindStringSubmatch(l)
 		if len(mapped) != 4 {
 			fmt.Printf("Error decoding IMAP LIST line (%s) got %d items\n", l, len(mapped))
-			return errors.New("Error decoding IMAP LIST line")
+			err = errors.New("Error decoding IMAP LIST line")
+			return
+		}
+		rname, err := UTF7Decode(mapped[3])
+		if err != nil {
+			fmt.Printf("Error decoding IMAP folder name in UTF-7 %s %+v\n", mapped[3], err)
+			return
 		}
 		folders = append(
 			folders,
 			folder_name_and_flags{
-				name:  mapped[3],
+				name:  rname,
 				flags: strings.Split(mapped[1], " "),
 			})
 		return
