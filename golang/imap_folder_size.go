@@ -41,6 +41,8 @@ var known_folder_flags = mapset.NewSet[string]()
 var imap_folder_list_re *regexp.Regexp
 var imap_quota_re *regexp.Regexp
 var imap_folder_examine_re *regexp.Regexp
+var imap_folder_search_re *regexp.Regexp
+var imap_folder_fetch_re *regexp.Regexp
 var imap_message_attributes = make(map[string]*regexp.Regexp, 4)
 
 func initialize_env_and_cmd_line_config() {
@@ -89,6 +91,8 @@ func initialize_globals() {
 	// Potential addition, parse the FLAGS line from EXAMINE response to gather
 	// all potential messages flags
 	imap_folder_examine_re = regexp.MustCompile("^* (\\d+) EXISTS$")
+	imap_folder_search_re = regexp.MustCompile("^* SEARCH ([0-9 ]+)$")
+	imap_folder_fetch_re = regexp.MustCompile("^* ([0-9]+) FETCH \\((.*)\\)$")
 	imap_message_attributes["ID"] = regexp.MustCompile("^(\\d+) \\((.*)\\)$")
 	imap_message_attributes["SIZE"] = regexp.MustCompile(".*RFC822.SIZE (\\d+).*")
 	imap_message_attributes["DATE"] = regexp.MustCompile(".*INTERNALDATE \\\"([^\\\"]+)\\\".*")
@@ -186,6 +190,58 @@ func get_folders(im *imap.Dialer) (folders []folder_name_and_flags, err error) {
 		fmt.Printf("Error getting folders list from IMAP server %+v", err)
 		return
 	}
+	return
+}
+
+func examine_folder_(im *imap.Dialer, folder string) (ret int, err error) {
+	// This uses the EXAMINE IMAP command (read-only mailbox)
+	// as opposed to SELECT however there are no response object
+	// returned so we do it manually
+	//err = im.SelectFolder(folder.name)
+	_, err = im.Exec(`EXAMINE "`+folder+`"`, false, 0, func(line []byte) error {
+		var lerr error = nil
+		l := strings.Trim(string(line), "\r\n")
+		mapped := imap_folder_examine_re.FindStringSubmatch(l)
+		if len(mapped) == 2 {
+			nb_messages, lerr := strconv.Atoi(mapped[1])
+			if lerr != nil {
+				fmt.Printf("IMAP server EXAMINE unable to convert existing messages number %s to integer (%+v)\n", mapped[1], lerr)
+				return lerr
+			}
+			ret = nb_messages
+		}
+		return lerr
+	})
+	im.Folder = folder
+	return
+}
+
+func search_all_folder(im *imap.Dialer) (min, max int, err error) {
+	min = 1000000000
+	max = 0
+	_, err = im.Exec(`SEARCH ALL`, false, 0, func(line []byte) error {
+		var lerr error = nil
+		l := strings.Trim(string(line), "\r\n")
+		mapped := imap_folder_search_re.FindStringSubmatch(l)
+		if len(mapped) != 2 {
+			fmt.Printf("IMAP server SEARCH ALL parse response properly: (%d) %s\n", len(mapped), l)
+			return errors.New("IMAP server SEARCH ALL parse response properly")
+		}
+		for _, id := range strings.Split(mapped[1], " ") {
+			int_id, lerr := strconv.Atoi(id)
+			if lerr != nil {
+				fmt.Printf("IMAP server SEARCH ALL unable to convert existing messages number %s to integer (%+v)\n", id, lerr)
+				return lerr
+			}
+			if int_id < min {
+				min = int_id
+			} else if int_id > max {
+				max = int_id
+			}
+		}
+		//fmt.Printf("GOT %s\n", l)
+		return lerr
+	})
 	return
 }
 
