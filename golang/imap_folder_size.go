@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 
@@ -23,12 +24,21 @@ type folder_name_and_flags struct {
 	flags []string
 }
 
+type message_infos struct {
+	id     int
+	size   int
+	date   time.Time
+	flags  []string
+	folder string
+}
+
 type folder_stats struct {
 	name     string
 	messages int
-	unread   int
+	unreads  int
 	size     int
 	quota    float32
+	contents []message_infos
 }
 
 var imap_server string
@@ -93,10 +103,9 @@ func initialize_globals() {
 	imap_folder_examine_re = regexp.MustCompile("^* (\\d+) EXISTS$")
 	imap_folder_search_re = regexp.MustCompile("^* SEARCH ([0-9 ]+)$")
 	imap_folder_fetch_re = regexp.MustCompile("^* ([0-9]+) FETCH \\((.*)\\)$")
-	imap_message_attributes["ID"] = regexp.MustCompile("^(\\d+) \\((.*)\\)$")
 	imap_message_attributes["SIZE"] = regexp.MustCompile(".*RFC822.SIZE (\\d+).*")
 	imap_message_attributes["DATE"] = regexp.MustCompile(".*INTERNALDATE \\\"([^\\\"]+)\\\".*")
-	imap_message_attributes["FLAGS"] = regexp.MustCompile(".*FLAGS \\(([^\\)]+)\\).*")
+	imap_message_attributes["FLAGS"] = regexp.MustCompile(".*FLAGS \\(([^\\)]*)\\).*")
 }
 
 func credentials(user string, passwd string) (string, string, error) {
@@ -218,7 +227,7 @@ func examine_folder_(im *imap.Dialer, folder string) (ret int, err error) {
 
 func search_all_folder(im *imap.Dialer) (min, max int, err error) {
 	min = 1000000000
-	max = 0
+	max = 1
 	_, err = im.Exec(`SEARCH ALL`, false, 0, func(line []byte) error {
 		var lerr error = nil
 		l := strings.Trim(string(line), "\r\n")
@@ -240,6 +249,63 @@ func search_all_folder(im *imap.Dialer) (min, max int, err error) {
 			}
 		}
 		//fmt.Printf("GOT %s\n", l)
+		return lerr
+	})
+	return
+}
+
+func fetch_folder_messages(im *imap.Dialer, msg_set string, msg_details string, ret_folder_stats *folder_stats) (err error) {
+	_, err = im.Exec(`FETCH `+msg_set+` `+msg_details, false, 0, func(line []byte) error {
+		var lerr error = nil
+		l := strings.Trim(string(line), "\r\n")
+		mapped := imap_folder_fetch_re.FindStringSubmatch(l)
+		if len(mapped) != 3 {
+			fmt.Printf("IMAP server FETCH unable to parse response properly: (%d) %s\n", len(mapped), l)
+			return errors.New("IMAP server FETCH unable to parse response properly")
+		}
+		int_id, lerr := strconv.Atoi(mapped[1])
+		if lerr != nil {
+			fmt.Printf("IMAP server FETCH parse response unable to convert existing messages number %s to integer (%+v)\n", mapped[1], lerr)
+			return lerr
+		}
+		msg_infos := message_infos{
+			id:     int_id,
+			size:   0,
+			date:   time.Date(1980, 1, 1, 0, 0, 0, 0, time.Local),
+			flags:  []string{},
+			folder: ret_folder_stats.name,
+		}
+		for key, regxp := range imap_message_attributes {
+			a_mapped := regxp.FindStringSubmatch(mapped[2])
+			if len(a_mapped) != 2 {
+				fmt.Printf("IMAP server FETCH unable to parse response properly: (%d) (%s) %s\n", len(a_mapped), key, mapped[2])
+				return errors.New("IMAP server FETCH unable to parse response properly (attributes)")
+			}
+			if key == "FLAGS" {
+				msg_infos.flags = strings.Split(a_mapped[1], " ")
+				// TODO: see if we can also sum for NonJunk and \\Answered
+				if !strings.Contains(a_mapped[1], "\\Seen") {
+					ret_folder_stats.unreads += 1
+				}
+			} else if key == "DATE" {
+				date_time, lerr := time.Parse("02-Jan-2006 15:04:05 +0000", a_mapped[1])
+				if lerr != nil {
+					fmt.Printf("IMAP server FETCH parse response unable to convert existing messages date %s (%+v)\n", a_mapped[1], lerr)
+					return lerr
+				}
+				msg_infos.date = date_time
+			} else if key == "SIZE" {
+				int_size, lerr := strconv.Atoi(a_mapped[1])
+				if lerr != nil {
+					fmt.Printf("IMAP server FETCH parse response unable to convert existing messages size %s to integer (%+v)\n", a_mapped[1], lerr)
+					return lerr
+				}
+				msg_infos.size = int_size
+				ret_folder_stats.size += int_size
+			} else {
+				fmt.Printf("IMAP server FETCH parse response properly: (%s) %s\n", key, mapped[2])
+			}
+		}
 		return lerr
 	})
 	return
@@ -267,36 +333,31 @@ func folder_infos(im *imap.Dialer, folder folder_name_and_flags) (ret folder_sta
 	ret = folder_stats{
 		name:     rname,
 		messages: 0,
-		unread:   0,
+		unreads:  0,
 		size:     0,
 		quota:    0.0,
+		contents: make([]message_infos, 0),
 	}
-	// This uses the EXAMINE IMAP command (read-only mailbox)
-	// as opposed to SELECT however there are no response object
-	// returned so we do it manually
-	//err = im.SelectFolder(folder.name)
-	_, err = im.Exec(`EXAMINE "`+folder.name+`"`, false, 0, func(line []byte) error {
-		var lerr error = nil
-		l := strings.Trim(string(line), "\r\n")
-		mapped := imap_folder_examine_re.FindStringSubmatch(l)
-		if len(mapped) == 2 {
-			nb_messages, lerr := strconv.Atoi(mapped[1])
-			if lerr != nil {
-				fmt.Printf("IMAP server EXAMINE unable to convert existing messages number %s to integer (%+v)\n", mapped[1], lerr)
-				return lerr
-			}
-			ret.messages = nb_messages
-		}
-		return lerr
-	})
-	im.Folder = folder.name
+	nb_msgs, err := examine_folder_(im, folder.name)
 	if err != nil {
 		fmt.Printf("Error selecting IMAP folder %s %+v\n", rname, err)
 		return
 	}
-	fmt.Printf("GOT %+v\n", ret)
-	/*xx, err := im.Exec(`SEARCH ALL`, true, 0, nil)
-	fmt.Printf("GOT %T\n", xx)*/
+	ret.messages = nb_msgs
+	// No further computation required for empty folder
+	if ret.messages == 0 {
+		return
+	}
+	min_msg_id, max_msg_id, err := search_all_folder(im)
+	if err != nil {
+		fmt.Printf("Error searching IMAP folder %s %+v\n", rname, err)
+		return
+	}
+	msg_set := fmt.Sprintf("%d:%d", min_msg_id, max_msg_id)
+	err = fetch_folder_messages(im, msg_set, "FAST", &ret)
+	if err != nil {
+		fmt.Printf("Error fetching IMAP folder %s %+v\n", rname, err)
+	}
 	return
 }
 
@@ -331,10 +392,27 @@ func main() {
 		fmt.Printf("Error fetching folders list from IMAP server %+v\n", err)
 		os.Exit(1)
 	}
+	total_messages := 0
+	total_unreads := 0
+	total_size := 0
+	all_folders := make([]folder_stats, 0)
+	// May be duplicate list of all messages like in Python
+	// version
+	// all_messages := make([]message_infos, 0)
 	for _, folder := range folders {
-		_, err := folder_infos(im, folder)
+		f_infos, err := folder_infos(im, folder)
 		if err != nil {
 			fmt.Printf("Error getting folder details on %s\n", folder)
 		}
+		all_folders = append(all_folders, f_infos)
+		if f_infos.messages > 0 {
+			total_messages += f_infos.messages
+			total_size += f_infos.size
+			total_unreads += f_infos.unreads
+			// all_messages = append(all_messages, f_infos.contents...)
+		}
 	}
+	fmt.Printf("Total messages: %d\n", total_messages)
+	fmt.Printf("Total unreads: %d\n", total_unreads)
+	fmt.Printf("Total size: %d\n", total_size)
 }
