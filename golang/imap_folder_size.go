@@ -40,6 +40,7 @@ var known_folder_flags = mapset.NewSet[string]()
 
 var imap_folder_list_re *regexp.Regexp
 var imap_quota_re *regexp.Regexp
+var imap_folder_examine_re *regexp.Regexp
 var imap_message_attributes = make(map[string]*regexp.Regexp, 4)
 
 func initialize_env_and_cmd_line_config() {
@@ -83,6 +84,11 @@ func initialize_globals() {
 	// Regular expressions
 	imap_folder_list_re = regexp.MustCompile("^* LIST \\(([^\\)]*)\\) \\\"([^\\s]+)\\\" \\\"(.*)\\\"$")
 	imap_quota_re = regexp.MustCompile("^* QUOTA [^\\(]+ \\(STORAGE (\\d+) (\\d+)\\)$")
+	// Could factorize the following with RECENT but seems like it is very
+	// rarely supported/meaningful
+	// Potential addition, parse the FLAGS line from EXAMINE response to gather
+	// all potential messages flags
+	imap_folder_examine_re = regexp.MustCompile("^* (\\d+) EXISTS$")
 	imap_message_attributes["ID"] = regexp.MustCompile("^(\\d+) \\((.*)\\)$")
 	imap_message_attributes["SIZE"] = regexp.MustCompile(".*RFC822.SIZE (\\d+).*")
 	imap_message_attributes["DATE"] = regexp.MustCompile(".*INTERNALDATE \\\"([^\\\"]+)\\\".*")
@@ -164,15 +170,10 @@ func get_folders(im *imap.Dialer) (folders []folder_name_and_flags, err error) {
 			err = errors.New("Error decoding IMAP LIST line")
 			return
 		}
-		rname, err := UTF7Decode(mapped[3])
-		if err != nil {
-			fmt.Printf("Error decoding IMAP folder name in UTF-7 %s %+v\n", mapped[3], err)
-			return
-		}
 		folders = append(
 			folders,
 			folder_name_and_flags{
-				name:  rname,
+				name:  mapped[3],
 				flags: strings.Split(mapped[1], " "),
 			})
 		return
@@ -202,11 +203,44 @@ func folder_infos(im *imap.Dialer, folder folder_name_and_flags) (ret folder_sta
 	if unknown_folder_flags.Cardinality() != 0 {
 		fmt.Printf("IMAP folder %s got unknown flag(s) [%+v]\n", folder.name, unknown_folder_flags)
 	}
-	fmt.Printf(
-		"Parsing folder %s -> %+v\n",
-		folder.name,
-		folder.flags,
-	)
+	rname, err := UTF7Decode(folder.name)
+	if err != nil {
+		fmt.Printf("Error decoding IMAP folder name in UTF-7 %s %+v\n", folder.name, err)
+		return
+	}
+	ret = folder_stats{
+		name:     rname,
+		messages: 0,
+		unread:   0,
+		size:     0,
+		quota:    0.0,
+	}
+	// This uses the EXAMINE IMAP command (read-only mailbox)
+	// as opposed to SELECT however there are no response object
+	// returned so we do it manually
+	//err = im.SelectFolder(folder.name)
+	_, err = im.Exec(`EXAMINE "`+folder.name+`"`, false, 0, func(line []byte) error {
+		var lerr error = nil
+		l := strings.Trim(string(line), "\r\n")
+		mapped := imap_folder_examine_re.FindStringSubmatch(l)
+		if len(mapped) == 2 {
+			nb_messages, lerr := strconv.Atoi(mapped[1])
+			if lerr != nil {
+				fmt.Printf("IMAP server EXAMINE unable to convert existing messages number %s to integer (%+v)\n", mapped[1], lerr)
+				return lerr
+			}
+			ret.messages = nb_messages
+		}
+		return lerr
+	})
+	im.Folder = folder.name
+	if err != nil {
+		fmt.Printf("Error selecting IMAP folder %s %+v\n", rname, err)
+		return
+	}
+	fmt.Printf("GOT %+v\n", ret)
+	/*xx, err := im.Exec(`SEARCH ALL`, true, 0, nil)
+	fmt.Printf("GOT %T\n", xx)*/
 	return
 }
 
